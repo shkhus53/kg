@@ -59,6 +59,10 @@ class DepartmentDetailReportExport implements WithMultipleSheets
             subtitle: $deptNames.' · '.$scopeLabel,
         );
 
+        // A person can legitimately hold a separate assignment in this same
+        // department across different sessions (recurring roster) — same ITS
+        // can genuinely show different statuses. Session + Session Date give
+        // the reader that context instead of an unexplained-looking conflict.
         $detailRows = [];
         $sr = 0;
         foreach ($sections as $section) {
@@ -70,6 +74,8 @@ class DepartmentDetailReportExport implements WithMultipleSheets
                     $a->khidmatguzar->its_id,
                     Gender::shortLabel($a->gender_snapshot),
                     $section['department']->name,
+                    $a->dutySession->name,
+                    $a->dutySession->date->format('d M Y'),
                     $a->block_name,
                     $a->seat,
                     $a->day_alias ?: $a->day,
@@ -81,10 +87,10 @@ class DepartmentDetailReportExport implements WithMultipleSheets
 
         $detail = new ArraySheet(
             'Detailed Attendance',
-            ['Sr. No.', 'Name', 'ITS Number', 'Gender', 'Department', 'Block', 'Seat', 'Day', 'Status', 'Marked At'],
+            ['Sr. No.', 'Name', 'ITS Number', 'Gender', 'Department', 'Session', 'Session Date', 'Block', 'Seat', 'Day', 'Status', 'Marked At'],
             $detailRows,
             landscape: true,
-            statusColumn: 9,
+            statusColumn: 11,
         );
 
         $extraRows = [];

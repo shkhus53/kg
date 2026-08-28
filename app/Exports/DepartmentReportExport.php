@@ -75,12 +75,20 @@ class DepartmentReportExport implements WithMultipleSheets
             landscape: true,
         );
 
+        // A person can legitimately hold separate assignments across different
+        // sessions (recurring roster) or different departments within one
+        // session (the app's existing Multiple Assignments feature) — same
+        // ITS can genuinely show different statuses. Session + Session Date
+        // give the reader the context to tell those apart at a glance,
+        // rather than looking like an unexplained Present/Absent conflict.
         $detailRows = $r['assignments']->values()->map(fn ($a, $i) => [
             $i + 1,
             $a->full_name_snapshot,
             $a->khidmatguzar->its_id,
             Gender::shortLabel($a->gender_snapshot),
             $a->department->name,
+            $a->dutySession->name,
+            $a->dutySession->date->format('d M Y'),
             $a->block_name,
             $a->seat,
             $a->day_alias ?: $a->day,
@@ -90,10 +98,10 @@ class DepartmentReportExport implements WithMultipleSheets
 
         $detail = new ArraySheet(
             'Detailed Attendance',
-            ['Sr. No.', 'Name', 'ITS Number', 'Gender', 'Department', 'Block', 'Seat', 'Day', 'Status', 'Marked At'],
+            ['Sr. No.', 'Name', 'ITS Number', 'Gender', 'Department', 'Session', 'Session Date', 'Block', 'Seat', 'Day', 'Status', 'Marked At'],
             $detailRows,
             landscape: true,
-            statusColumn: 9,
+            statusColumn: 11,
         );
 
         $extraRows = $r['extraPresents']->values()->map(fn ($e, $i) => [
