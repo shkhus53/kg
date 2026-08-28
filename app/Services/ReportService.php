@@ -167,6 +167,80 @@ class ReportService
         ];
     }
 
+    /**
+     * Full per-department detail report — KPI summary, gender breakdown,
+     * member-level attendance rows, and Extra Present, for one or more
+     * specific departments. Distinct from departmentReport()/departmentBreakdown()
+     * (the existing all-departments summary list), which this does not
+     * replace or alter. Each department gets its own independent section —
+     * scheduled/present/absent/pending and gender counts are computed
+     * per-department, never merged across departments.
+     *
+     * @param  array<int>  $departmentIds
+     */
+    public function departmentDetailReport(array $departmentIds, string $from, string $to, ?int $sessionId): array
+    {
+        $departments = Department::whereIn('id', $departmentIds)->orderBy('name')->get();
+
+        $sections = $departments->map(function (Department $department) use ($from, $to, $sessionId) {
+            $assignmentQuery = DutyAssignment::where('department_id', $department->id);
+            $extraQuery = ExtraPresent::where('department_id', $department->id);
+
+            if ($sessionId) {
+                $assignmentQuery->where('duty_session_id', $sessionId);
+                $extraQuery->where('duty_session_id', $sessionId);
+            } else {
+                $assignmentQuery->whereHas('dutySession', fn ($q) => $q->whereBetween('date', [$from, $to]));
+                $extraQuery->whereHas('dutySession', fn ($q) => $q->whereBetween('date', [$from, $to]));
+            }
+
+            $stats = (clone $assignmentQuery)->selectRaw("
+                COUNT(*) as scheduled,
+                SUM(current_status = 'present') as present,
+                SUM(current_status = 'absent') as absent,
+                SUM(current_status = 'pending') as pending,
+                ".$this->genderSelectRaw('gender_snapshot')."
+            ")->first();
+
+            $scheduled = (int) ($stats->scheduled ?? 0);
+            $present = (int) ($stats->present ?? 0);
+            $absent = (int) ($stats->absent ?? 0);
+            $pending = (int) ($stats->pending ?? 0);
+
+            $assignments = (clone $assignmentQuery)
+                ->with(['khidmatguzar:id,its_id,full_name', 'dutySession:id,name,date', 'attendanceMarkedBy:id,name'])
+                ->orderBy('duty_session_id')
+                ->orderBy('id')
+                ->get();
+
+            $extraPresents = (clone $extraQuery)
+                ->with(['khidmatguzar:id,its_id,full_name', 'markedBy:id,name'])
+                ->orderBy('marked_at')
+                ->get();
+
+            return [
+                'department' => $department,
+                'scheduled' => $scheduled,
+                'present' => $present,
+                'absent' => $absent,
+                'pending' => $pending,
+                'extraCount' => $extraPresents->count(),
+                'rate' => $scheduled > 0 ? round(100 * $present / $scheduled, 1) : null,
+                'genderBreakdown' => $this->genderBreakdownFromRow($stats),
+                'assignments' => $assignments,
+                'extraPresents' => $extraPresents,
+            ];
+        });
+
+        return [
+            'from' => $from,
+            'to' => $to,
+            'sessionId' => $sessionId,
+            'session' => $sessionId ? DutySession::find($sessionId) : null,
+            'sections' => $sections,
+        ];
+    }
+
     private function departmentBreakdown(?string $from = null, ?string $to = null, ?int $sessionId = null)
     {
         $query = DutyAssignment::query()

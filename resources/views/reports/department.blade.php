@@ -6,6 +6,15 @@
     <div class="space-y-5">
         <x-shell.card>
             <form method="GET" action="{{ route('reports.department') }}" class="grid grid-cols-2 gap-3">
+                <div class="col-span-2">
+                    <x-input-label for="department_id" :value="__('Department')" />
+                    <select id="department_id" name="department_id" class="mt-1 block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="">{{ __('All Departments') }}</option>
+                        @foreach ($departments as $d)
+                            <option value="{{ $d->id }}">{{ $d->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
                 <div>
                     <x-input-label for="from" :value="__('From')" />
                     <x-text-input id="from" name="from" type="date" class="mt-1 block w-full" :value="$from" />

@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\DepartmentDetailReportExport;
 use App\Exports\DepartmentReportExport;
 use App\Exports\KhidmatguzarReportExport;
 use App\Exports\SessionAttendanceExport;
+use App\Models\Department;
 use App\Models\DutySession;
 use App\Models\Khidmatguzar;
 use App\Services\ReportService;
@@ -54,16 +56,32 @@ class ReportController extends Controller
 
     public function departmentPreview(Request $request): View
     {
-        [$from, $to, $sessionId] = $this->resolveDepartmentScope($request);
+        [$from, $to, $sessionId, $departmentId] = $this->resolveDepartmentScope($request);
 
-        return view('reports.department', $this->reports->departmentReport($from, $to, $sessionId) + [
-            'sessions' => DutySession::whereBetween('date', [$from, $to])->orderByDesc('date')->get(['id', 'name', 'date']),
-        ]);
+        $extra = ['sessions' => DutySession::whereBetween('date', [$from, $to])->orderByDesc('date')->get(['id', 'name', 'date'])];
+        $extra['departments'] = Department::orderBy('name')->get(['id', 'name']);
+        $extra['departmentId'] = $departmentId;
+
+        if ($departmentId) {
+            return view('reports.department-detail', $this->reports->departmentDetailReport([$departmentId], $from, $to, $sessionId) + $extra);
+        }
+
+        return view('reports.department', $this->reports->departmentReport($from, $to, $sessionId) + $extra);
     }
 
     public function departmentPdf(Request $request): Response
     {
-        [$from, $to, $sessionId] = $this->resolveDepartmentScope($request);
+        [$from, $to, $sessionId, $departmentId] = $this->resolveDepartmentScope($request);
+
+        if ($departmentId) {
+            $data = $this->reports->departmentDetailReport([$departmentId], $from, $to, $sessionId);
+            $pdf = Pdf::loadView('reports.pdf.department-detail', $data)->setPaper('a4', 'portrait');
+            $deptName = $data['sections']->first()['department']->name ?? 'department';
+            $filename = 'department-attendance-'.$this->reports->safeFilenamePart($deptName.'-'.$from.'-to-'.$to).'.pdf';
+
+            return $pdf->download($filename);
+        }
+
         $data = $this->reports->departmentReport($from, $to, $sessionId);
         $pdf = Pdf::loadView('reports.pdf.department', $data)->setPaper('a4', 'portrait');
 
@@ -74,7 +92,16 @@ class ReportController extends Controller
 
     public function departmentExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
-        [$from, $to, $sessionId] = $this->resolveDepartmentScope($request);
+        [$from, $to, $sessionId, $departmentId] = $this->resolveDepartmentScope($request);
+
+        if ($departmentId) {
+            $data = $this->reports->departmentDetailReport([$departmentId], $from, $to, $sessionId);
+            $deptName = $data['sections']->first()['department']->name ?? 'department';
+            $filename = 'department-attendance-'.$this->reports->safeFilenamePart($deptName.'-'.$from.'-to-'.$to).'.xlsx';
+
+            return Excel::download(new DepartmentDetailReportExport($data), $filename);
+        }
+
         $data = $this->reports->departmentReport($from, $to, $sessionId);
         $filename = 'department-attendance-'.$this->reports->safeFilenamePart($from.'-to-'.$to).'.xlsx';
 
@@ -105,7 +132,7 @@ class ReportController extends Controller
     }
 
     /**
-     * @return array{0: string, 1: string, 2: ?int}
+     * @return array{0: string, 1: string, 2: ?int, 3: ?int}
      */
     private function resolveDepartmentScope(Request $request): array
     {
@@ -115,9 +142,15 @@ class ReportController extends Controller
             DutySession::findOrFail($sessionId);
         }
 
+        $departmentId = $request->query('department_id') ? (int) $request->query('department_id') : null;
+
+        if ($departmentId) {
+            Department::findOrFail($departmentId);
+        }
+
         $from = $request->query('from') ?: now()->subDays(30)->format('Y-m-d');
         $to = $request->query('to') ?: now()->format('Y-m-d');
 
-        return [$from, $to, $sessionId];
+        return [$from, $to, $sessionId, $departmentId];
     }
 }
