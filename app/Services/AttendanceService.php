@@ -48,13 +48,14 @@ class AttendanceService
                 return ['result' => 'already_present', 'assignment' => $assignment];
             }
 
-            if ($assignment->current_status === 'absent') {
-                return ['result' => 'already_absent', 'assignment' => $assignment];
-            }
+            // Late arrival: an operator marked Absent too early, the person
+            // then showed up. Absent -> Present is an allowed correction;
+            // Present -> Absent (see markAbsent) is not.
+            $wasAbsent = $assignment->current_status === 'absent';
 
             $this->applyPresent($assignment, $actor, $remark);
 
-            return ['result' => 'marked', 'assignment' => $assignment->fresh()];
+            return ['result' => $wasAbsent ? 'corrected' : 'marked', 'assignment' => $assignment->fresh()];
         });
     }
 
@@ -64,14 +65,14 @@ class AttendanceService
      * not silently absorbed — the caller gets the full breakdown back.
      *
      * @param  array<int>  $assignmentIds
-     * @return array{marked: array<int>, already_present: array<int>, already_absent: array<int>, not_found: array<int>}
+     * @return array{marked: array<int>, corrected: array<int>, already_present: array<int>, not_found: array<int>}
      */
     public function markPresentMany(DutySession $session, array $assignmentIds, User $actor, ?string $remark = null): array
     {
         return DB::transaction(function () use ($session, $assignmentIds, $actor, $remark) {
             $lockedSession = DutySession::whereKey($session->id)->lockForUpdate()->first();
 
-            $outcome = ['marked' => [], 'already_present' => [], 'already_absent' => [], 'not_found' => []];
+            $outcome = ['marked' => [], 'corrected' => [], 'already_present' => [], 'not_found' => []];
 
             if (! $lockedSession->isActive()) {
                 $outcome['session_not_active'] = true;
@@ -100,14 +101,10 @@ class AttendanceService
                     continue;
                 }
 
-                if ($assignment->current_status === 'absent') {
-                    $outcome['already_absent'][] = $id;
-
-                    continue;
-                }
+                $wasAbsent = $assignment->current_status === 'absent';
 
                 $this->applyPresent($assignment, $actor, $remark);
-                $outcome['marked'][] = $id;
+                $outcome[$wasAbsent ? 'corrected' : 'marked'][] = $id;
             }
 
             return $outcome;

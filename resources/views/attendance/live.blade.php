@@ -166,6 +166,16 @@
                                 @if ($assignment->attendanceMarkedBy) &middot; {{ $assignment->attendanceMarkedBy->name }} @endif
                             </p>
                         </div>
+
+                        @if ($dutySession->isActive())
+                            <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="mt-3" x-data="{ submitting: false }" @submit="submitting = true">
+                                @csrf
+                                <input type="hidden" name="assignment_ids[]" value="{{ $assignment->id }}">
+                                <input type="hidden" name="its" value="{{ $itsId }}">
+                                <p class="mb-2 text-xs text-slate-500">{{ __('Person arrived late? Correct this to Present.') }}</p>
+                                <x-shell.button tone="success" type="submit" x-bind:disabled="submitting">{{ __('Mark Present') }}</x-shell.button>
+                            </form>
+                        @endif
                     @endif
                 </x-shell.card>
             @elseif ($matches->count() > 1)
@@ -181,11 +191,12 @@
 
                         <div class="space-y-2">
                             @foreach ($matches as $assignment)
-                                <label class="flex items-center justify-between rounded-xl border border-slate-100 p-3 {{ $assignment->current_status !== 'pending' ? 'opacity-60' : '' }}">
+                                @php $correctable = in_array($assignment->current_status, ['pending', 'absent'], true); @endphp
+                                <label class="flex items-center justify-between rounded-xl border border-slate-100 p-3 {{ ! $correctable ? 'opacity-60' : '' }}">
                                     <span class="flex items-center gap-3">
                                         <input type="checkbox" name="assignment_ids[]" value="{{ $assignment->id }}"
                                                x-model="selected"
-                                               @if ($assignment->current_status !== 'pending') disabled @endif
+                                               @unless ($correctable) disabled @endunless
                                                class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                         <span>
                                             <span class="block text-sm font-medium text-slate-900">{{ $assignment->department->name }}</span>

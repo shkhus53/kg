@@ -5,7 +5,7 @@
                 <x-shell.badge :tone="$dutySession->statusTone()">{{ $dutySession->status }}</x-shell.badge>
             </x-slot:actions>
 
-            <div class="grid grid-cols-4 gap-2 text-center">
+            <div class="grid grid-cols-5 gap-2 text-center">
                 <div class="rounded-xl bg-white/10 px-1 py-2">
                     <p class="text-lg font-semibold">{{ $counts['scheduled'] }}</p>
                     <p class="text-[10px] text-white/60">{{ __('Scheduled') }}</p>
@@ -13,6 +13,10 @@
                 <div class="rounded-xl bg-white/10 px-1 py-2">
                     <p class="text-lg font-semibold text-emerald-300">{{ $counts['present'] }}</p>
                     <p class="text-[10px] text-white/60">{{ __('Present') }}</p>
+                </div>
+                <div class="rounded-xl bg-white/10 px-1 py-2">
+                    <p class="text-lg font-semibold text-red-300">{{ $counts['absent'] }}</p>
+                    <p class="text-[10px] text-white/60">{{ __('Absent') }}</p>
                 </div>
                 <div class="rounded-xl bg-white/10 px-1 py-2">
                     <p class="text-lg font-semibold text-orange-300">{{ $counts['pending'] }}</p>

@@ -80,8 +80,8 @@ class AttendanceController extends Controller
             $outcome = $this->attendance->markPresent($dutySession, (int) $validated['assignment_ids'][0], $request->user(), $validated['remark'] ?? null);
             $status = match ($outcome['result']) {
                 'marked' => ['type' => 'success', 'message' => 'Marked Present.'],
+                'corrected' => ['type' => 'success', 'message' => 'Corrected to Present.'],
                 'already_present' => ['type' => 'info', 'message' => 'Already Present.'],
-                'already_absent' => ['type' => 'warning', 'message' => 'Already marked Absent — cannot mark Present.'],
                 'session_not_active' => ['type' => 'error', 'message' => 'Session is not active — attendance is read-only.'],
                 default => ['type' => 'error', 'message' => 'Assignment not found.'],
             };
@@ -91,8 +91,9 @@ class AttendanceController extends Controller
             if (! empty($outcome['session_not_active'])) {
                 $status = ['type' => 'error', 'message' => 'Session is not active — attendance is read-only.'];
             } else {
-                $status = ['type' => 'success', 'message' => count($outcome['marked']).' marked Present.'
-                    .(count($outcome['already_present']) + count($outcome['already_absent']) > 0 ? ' '.(count($outcome['already_present']) + count($outcome['already_absent'])).' skipped (already actioned by someone else).' : ''),
+                $marked = count($outcome['marked']) + count($outcome['corrected']);
+                $status = ['type' => 'success', 'message' => $marked.' marked Present.'
+                    .(count($outcome['already_present']) > 0 ? ' '.count($outcome['already_present']).' skipped (already actioned by someone else).' : ''),
                 ];
             }
         }

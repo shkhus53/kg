@@ -42,6 +42,7 @@
                 <div class="flex justify-between"><dt class="text-slate-500">{{ __('Total Scheduled') }}</dt><dd class="font-semibold text-slate-900">{{ $scheduled }}</dd></div>
                 <div class="flex justify-between"><dt class="text-slate-500">{{ __('Present') }}</dt><dd class="font-semibold text-emerald-600">{{ $present }}</dd></div>
                 <div class="flex justify-between"><dt class="text-slate-500">{{ __('Absent') }}</dt><dd class="font-semibold text-red-600">{{ $absent }}</dd></div>
+                <div class="flex justify-between"><dt class="text-slate-500">{{ __('Pending') }}</dt><dd class="font-semibold text-orange-500">{{ $pending }}</dd></div>
                 <div class="flex justify-between"><dt class="text-slate-500">{{ __('Extra Present') }}</dt><dd class="font-semibold text-violet-600">{{ $extra }}</dd></div>
             </dl>
 
