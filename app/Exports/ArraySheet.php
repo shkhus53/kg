@@ -50,7 +50,11 @@ class ArraySheet implements FromArray, ShouldAutoSize, WithEvents, WithTitle
             if ($this->subtitle) {
                 $out[] = [$this->subtitle];
             }
-            $out[] = [];
+            // A bare [] here is falsy and gets silently dropped somewhere in
+            // the write pipeline, collapsing every row below it up by one.
+            // A single blank-string cell is a real (non-empty) PHP array, so
+            // it survives and actually renders as a blank spacer row.
+            $out[] = [''];
         }
 
         $out[] = $this->headings;
@@ -94,6 +98,26 @@ class ArraySheet implements FromArray, ShouldAutoSize, WithEvents, WithTitle
                     if ($this->subtitle) {
                         $sheet->mergeCells("A2:{$lastCol}2");
                         $sheet->getStyle('A2')->getFont()->setItalic(true)->setSize(10)->getColor()->setRGB('64748B');
+                    }
+                }
+
+                // Work around a maatwebsite/excel quirk: Sheet::append() calls
+                // PhpSpreadsheet's fromArray() with strictNullComparison=false,
+                // so any literal int/float 0 loosely equals the null sentinel
+                // and gets silently skipped, leaving the cell blank instead of
+                // "0" — a real accuracy problem for a report where 0 is a
+                // meaningful, verified count (e.g. "Unknown: 0"). Re-write
+                // every cell we know was meant to be a numeric 0.
+                foreach ($this->rows as $i => $row) {
+                    foreach (array_values($row) as $j => $value) {
+                        if ($value === 0 || $value === 0.0) {
+                            $col = Coordinate::stringFromColumnIndex($j + 1);
+                            $sheet->setCellValueExplicit(
+                                $col.($headingRow + 1 + $i),
+                                0,
+                                \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC
+                            );
+                        }
                     }
                 }
 
