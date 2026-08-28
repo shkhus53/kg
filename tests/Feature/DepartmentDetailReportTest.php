@@ -179,8 +179,10 @@ class DepartmentDetailReportTest extends TestCase
         $spreadsheet = IOFactory::load($path);
         $sheet = $spreadsheet->getSheetByName('Extra Present');
 
-        $this->assertSame(1 + 1, $sheet->getHighestRow()); // 1 extra present + header
-        $this->assertSame('Dept Extra Person', $sheet->getCell('B2')->getValue());
+        // title + subtitle + blank spacer + header + 1 data row
+        $this->assertSame(5, $sheet->getHighestRow());
+        $this->assertSame('Extra Present — Not Part of Scheduled Attendance', $sheet->getCell('A1')->getValue());
+        $this->assertSame('Dept Extra Person', $sheet->getCell('B5')->getValue());
 
         unlink($path);
     }
@@ -256,5 +258,39 @@ class DepartmentDetailReportTest extends TestCase
         $response = $this->actingAs($user)->get(route('reports.department', ['department_id' => $deptA->id]));
         $response->assertOk();
         $response->assertViewIs('reports.department-detail');
+    }
+
+    public function test_all_departments_excel_has_four_sheets_with_correct_row_counts(): void
+    {
+        [$session, $deptA, $deptB] = $this->seedTwoDepartments();
+        $data = app(ReportService::class)->departmentReport($session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
+
+        \Maatwebsite\Excel\Facades\Excel::store(new \App\Exports\DepartmentReportExport($data), 'test-all-dept.xlsx', 'local');
+        $path = storage_path('app/private/test-all-dept.xlsx');
+
+        $spreadsheet = IOFactory::load($path);
+        $titles = array_map(fn ($s) => $s->getTitle(), $spreadsheet->getAllSheets());
+        $this->assertSame(['Executive Summary', 'Department Summary', 'Detailed Attendance', 'Extra Present'], $titles);
+
+        // 4 (deptA) + 2 (deptB) = 6 scheduled assignments across both departments.
+        $detail = $spreadsheet->getSheetByName('Detailed Attendance');
+        $this->assertSame(6 + 1, $detail->getHighestRow());
+
+        $deptSummary = $spreadsheet->getSheetByName('Department Summary');
+        $this->assertSame(2 + 1, $deptSummary->getHighestRow()); // 2 departments + header
+
+        unlink($path);
+    }
+
+    public function test_all_departments_executive_summary_reconciles(): void
+    {
+        [$session] = $this->seedTwoDepartments();
+        $data = app(ReportService::class)->departmentReport($session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
+
+        $this->assertSame(6, $data['scheduled']);
+        $this->assertSame($data['scheduled'], $data['present'] + $data['absent'] + $data['pending']);
+        $g = $data['genderBreakdown'];
+        $this->assertSame($data['scheduled'], $g['scheduled']['male'] + $g['scheduled']['female'] + $g['scheduled']['unknown']);
+        $this->assertSame(1, $data['extraCount']); // extra present stays outside scheduled
     }
 }

@@ -32,6 +32,20 @@ class ArraySheet implements FromArray, ShouldAutoSize, WithEvents, WithTitle
      * @param  array<int,string>  $headings
      * @param  array<int,array<int,mixed>>  $rows
      */
+    private const STATUS_COLORS = [
+        'Present' => '059669',
+        'Absent' => 'DC2626',
+        'Pending' => 'EA580C',
+    ];
+
+    /**
+     * @param  array<int,string>  $headings
+     * @param  array<int,array<int,mixed>>  $rows
+     * @param  int|null  $statusColumn  1-based column index (within $headings)
+     *                                  whose value is Present/Absent/Pending —
+     *                                  colors that cell's text only, so sorting
+     *                                  and filtering on the column are untouched.
+     */
     public function __construct(
         private readonly string $title,
         private readonly array $headings,
@@ -39,6 +53,7 @@ class ArraySheet implements FromArray, ShouldAutoSize, WithEvents, WithTitle
         private readonly ?string $reportTitle = null,
         private readonly ?string $subtitle = null,
         private readonly bool $landscape = false,
+        private readonly ?int $statusColumn = null,
     ) {}
 
     public function array(): array
@@ -142,6 +157,21 @@ class ArraySheet implements FromArray, ShouldAutoSize, WithEvents, WithTitle
                     }
 
                     $sheet->setAutoFilter("A{$headingRow}:{$lastCol}{$lastRow}");
+                }
+
+                // Color-code the Status column's text (not fill, not the cell
+                // value) so Present/Absent/Pending are readable at a glance
+                // without disturbing sort/filter on that column.
+                if ($this->statusColumn && $lastRow > $headingRow) {
+                    $statusCol = Coordinate::stringFromColumnIndex($this->statusColumn);
+                    foreach ($this->rows as $i => $row) {
+                        $value = array_values($row)[$this->statusColumn - 1] ?? null;
+                        $color = self::STATUS_COLORS[$value] ?? null;
+                        if ($color) {
+                            $sheet->getStyle($statusCol.($headingRow + 1 + $i))->getFont()
+                                ->setBold(true)->getColor()->setRGB($color);
+                        }
+                    }
                 }
 
                 // Freeze everything above and including the header row so it

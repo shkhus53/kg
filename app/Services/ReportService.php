@@ -93,12 +93,54 @@ class ReportService
      */
     public function departmentReport(string $from, string $to, ?int $sessionId): array
     {
+        $query = DutyAssignment::query();
+        $extraQuery = ExtraPresent::query();
+
+        if ($sessionId) {
+            $query->where('duty_session_id', $sessionId);
+            $extraQuery->where('duty_session_id', $sessionId);
+        } else {
+            $query->whereHas('dutySession', fn ($q) => $q->whereBetween('date', [$from, $to]));
+            $extraQuery->whereHas('dutySession', fn ($q) => $q->whereBetween('date', [$from, $to]));
+        }
+
+        $stats = (clone $query)->selectRaw("
+            COUNT(*) as scheduled,
+            SUM(current_status = 'present') as present,
+            SUM(current_status = 'absent') as absent,
+            SUM(current_status = 'pending') as pending,
+            ".$this->genderSelectRaw('gender_snapshot')."
+        ")->first();
+
+        $scheduled = (int) ($stats->scheduled ?? 0);
+        $present = (int) ($stats->present ?? 0);
+
+        $assignments = (clone $query)
+            ->with(['khidmatguzar:id,its_id,full_name', 'department:id,name', 'dutySession:id,name,date', 'attendanceMarkedBy:id,name'])
+            ->orderBy('department_id')
+            ->orderBy('id')
+            ->get();
+
+        $extraPresents = (clone $extraQuery)
+            ->with(['khidmatguzar:id,its_id,full_name', 'markedBy:id,name'])
+            ->orderBy('marked_at')
+            ->get();
+
         return [
             'from' => $from,
             'to' => $to,
             'sessionId' => $sessionId,
             'session' => $sessionId ? DutySession::find($sessionId) : null,
+            'scheduled' => $scheduled,
+            'present' => $present,
+            'absent' => (int) ($stats->absent ?? 0),
+            'pending' => (int) ($stats->pending ?? 0),
+            'extraCount' => $extraPresents->count(),
+            'rate' => $scheduled > 0 ? round(100 * $present / $scheduled, 1) : null,
+            'genderBreakdown' => $this->genderBreakdownFromRow($stats),
             'departments' => $this->departmentBreakdown($from, $to, $sessionId),
+            'assignments' => $assignments,
+            'extraPresents' => $extraPresents,
         ];
     }
 
@@ -246,13 +288,11 @@ class ReportService
         $query = DutyAssignment::query()
             ->join('departments', 'departments.id', '=', 'duty_assignments.department_id');
 
-        if ($from && $to) {
-            $query->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
-                ->whereBetween('duty_sessions.date', [$from, $to]);
-        }
-
         if ($sessionId) {
             $query->where('duty_assignments.duty_session_id', $sessionId);
+        } elseif ($from && $to) {
+            $query->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+                ->whereBetween('duty_sessions.date', [$from, $to]);
         }
 
         return $query->groupBy('departments.id', 'departments.name')

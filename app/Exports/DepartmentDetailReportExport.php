@@ -30,7 +30,8 @@ class DepartmentDetailReportExport implements WithMultipleSheets
             $g = $section['genderBreakdown'];
             $summaryRows[] = ['', ''];
             $summaryRows[] = [$section['department']->name, ''];
-            $summaryRows[] = ['Scheduled', $section['scheduled']];
+            $summaryRows[] = ['Report Date / Session', $scopeLabel];
+            $summaryRows[] = ['Total Scheduled', $section['scheduled']];
             $summaryRows[] = ['Present', $section['present']];
             $summaryRows[] = ['Absent', $section['absent']];
             $summaryRows[] = ['Pending', $section['pending']];
@@ -83,6 +84,7 @@ class DepartmentDetailReportExport implements WithMultipleSheets
             ['Sr. No.', 'Name', 'ITS Number', 'Gender', 'Department', 'Block', 'Seat', 'Day', 'Status', 'Marked At'],
             $detailRows,
             landscape: true,
+            statusColumn: 9,
         );
 
         $extraRows = [];
@@ -106,6 +108,8 @@ class DepartmentDetailReportExport implements WithMultipleSheets
             'Extra Present',
             ['Sr. No.', 'Name', 'ITS Number', 'Department', 'Marked At', 'Marked By', 'Remark'],
             $extraRows,
+            reportTitle: 'Extra Present — Not Part of Scheduled Attendance',
+            subtitle: $scopeLabel,
             landscape: true,
         );
 
