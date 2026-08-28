@@ -11,6 +11,8 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import androidx.core.graphics.Insets;
@@ -33,10 +35,15 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        webView = new WebView(this);
-        setContentView(webView);
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(STATUS_BAR_BACKDROP);
 
-        setUpEdgeToEdgeInsets();
+        webView = new WebView(this);
+        root.addView(webView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(root);
+
+        setUpEdgeToEdgeInsets(root);
 
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
@@ -95,15 +102,23 @@ public class MainActivity extends Activity {
 
     /**
      * The system now enforces edge-to-edge (this app targets SDK 35, where the OS draws
-     * behind the status/navigation bars regardless of the theme's bar-color attributes).
-     * Without this, the app's own header sits under the status bar and its bottom
-     * navigation sits under the gesture/nav area. This pads the WebView by exactly the
-     * system bar insets on whichever device it's running on — the web content itself is
-     * untouched, only the native container is inset — so the page's own header/bottom
-     * nav land fully below/above the system chrome on any status-bar or gesture-nav
-     * configuration.
+     * behind the status/navigation bars regardless of the theme's bar-color attributes),
+     * so the WebView's own bounds cover the full screen including under the system bars.
+     *
+     * View.setPadding() on the WebView (the previous attempt, commit a28b3b6) does NOT
+     * fix this: WebView padding only offsets where normal-flow content starts scrolling
+     * from — it does not shrink the Chromium layout viewport, which is what CSS
+     * `position: fixed` (used by this app's bottom nav — see bottom-nav.blade.php,
+     * `fixed inset-x-0 bottom-0`) is positioned against. So a padded WebView still lets
+     * fixed elements sit at the WebView's true, unshrunk edges — under the system bars.
+     *
+     * The fix here instead resizes the WebView's actual layout bounds: the WebView sits
+     * in a FrameLayout, and system bar insets are applied as MARGINS on the WebView
+     * itself. A margin genuinely changes the WebView's measured width/height, so
+     * Chromium recomputes its CSS viewport to that smaller size — `position: fixed`
+     * elements then anchor to the new, already-safe-area-constrained edges.
      */
-    private void setUpEdgeToEdgeInsets() {
+    private void setUpEdgeToEdgeInsets(FrameLayout root) {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
@@ -114,14 +129,15 @@ public class MainActivity extends Activity {
         controller.setAppearanceLightStatusBars(false);
         controller.setAppearanceLightNavigationBars(true);
 
-        // Shows through the status-bar strip before the page paints and on any screen
-        // whose very top is the locked navy header (the vast majority of the app).
-        webView.setBackgroundColor(STATUS_BAR_BACKDROP);
-
-        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, insets) -> {
+        ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-            return insets;
+            ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) webView.getLayoutParams();
+            params.topMargin = systemBars.top;
+            params.bottomMargin = systemBars.bottom;
+            params.leftMargin = systemBars.left;
+            params.rightMargin = systemBars.right;
+            webView.setLayoutParams(params);
+            return WindowInsetsCompat.CONSUMED;
         });
     }
 
