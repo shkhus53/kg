@@ -2,6 +2,7 @@ package com.binatechnologies.kgattendance;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.CookieManager;
@@ -12,9 +13,18 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+
 public class MainActivity extends Activity {
     private static final String START_URL = "https://kg.bina-technologies.com";
     private static final int FILE_CHOOSER_REQUEST = 1001;
+
+    /** Matches the locked design system's navy header — the color visible behind the status bar. */
+    private static final int STATUS_BAR_BACKDROP = Color.parseColor("#0F1F41");
 
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
@@ -25,6 +35,8 @@ public class MainActivity extends Activity {
 
         webView = new WebView(this);
         setContentView(webView);
+
+        setUpEdgeToEdgeInsets();
 
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
@@ -79,6 +91,38 @@ public class MainActivity extends Activity {
         } else {
             webView.restoreState(savedInstanceState);
         }
+    }
+
+    /**
+     * The system now enforces edge-to-edge (this app targets SDK 35, where the OS draws
+     * behind the status/navigation bars regardless of the theme's bar-color attributes).
+     * Without this, the app's own header sits under the status bar and its bottom
+     * navigation sits under the gesture/nav area. This pads the WebView by exactly the
+     * system bar insets on whichever device it's running on — the web content itself is
+     * untouched, only the native container is inset — so the page's own header/bottom
+     * nav land fully below/above the system chrome on any status-bar or gesture-nav
+     * configuration.
+     */
+    private void setUpEdgeToEdgeInsets() {
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+
+        // White (light) icons over the navy header; dark icons over the app's white
+        // bottom navigation bar.
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), webView);
+        controller.setAppearanceLightStatusBars(false);
+        controller.setAppearanceLightNavigationBars(true);
+
+        // Shows through the status-bar strip before the page paints and on any screen
+        // whose very top is the locked navy header (the vast majority of the app).
+        webView.setBackgroundColor(STATUS_BAR_BACKDROP);
+
+        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+            return insets;
+        });
     }
 
     @Override
