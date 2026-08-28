@@ -7,7 +7,9 @@ use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
 /**
  * All-departments management workbook: Executive Summary (org-wide totals +
- * gender), Department Summary (one row per department), Detailed Attendance
+ * gender), Department Summary (compact, one row per department, no gender
+ * columns), Gender Breakdown (one row per department, full Male/Female/
+ * Unknown split for Scheduled/Present/Absent/Pending), Detailed Attendance
  * (every scheduled record across all departments), Extra Present (fully
  * separate). Built entirely from ReportService::departmentReport() — no
  * calculation logic lives here, only presentation.
@@ -56,6 +58,10 @@ class DepartmentReportExport implements WithMultipleSheets
             subtitle: $scopeLabel,
         );
 
+        // Kept compact and scannable — one row per department, no gender
+        // columns here. Full gender composition (per status, per department)
+        // lives in the dedicated Gender Breakdown sheet below instead of
+        // bloating this table toward 20+ columns.
         $deptRows = $r['departments']->map(fn ($d) => [
             $d->department_name,
             $d->scheduled,
@@ -63,15 +69,40 @@ class DepartmentReportExport implements WithMultipleSheets
             $d->absent,
             $d->pending,
             $d->rate.'%',
-            $d->genderBreakdown['scheduled']['male'],
-            $d->genderBreakdown['scheduled']['female'],
-            $d->genderBreakdown['scheduled']['unknown'],
         ])->all();
 
         $departmentSummary = new ArraySheet(
             'Department Summary',
-            ['Department', 'Scheduled', 'Present', 'Absent', 'Pending', 'Attendance Rate', 'Male', 'Female', 'Unknown'],
+            ['Department', 'Scheduled', 'Present', 'Absent', 'Pending', 'Attendance Rate'],
             $deptRows,
+            landscape: true,
+        );
+
+        // One row per department; Male/Female/Unknown for every status, so a
+        // reader gets each department's full gender composition — Scheduled,
+        // Present, Absent, Pending — without opening Detailed Attendance.
+        $genderRows = $r['departments']->map(function ($d) {
+            $g = $d->genderBreakdown;
+
+            return [
+                $d->department_name,
+                $g['scheduled']['male'], $g['scheduled']['female'], $g['scheduled']['unknown'],
+                $g['present']['male'], $g['present']['female'], $g['present']['unknown'],
+                $g['absent']['male'], $g['absent']['female'], $g['absent']['unknown'],
+                $g['pending']['male'], $g['pending']['female'], $g['pending']['unknown'],
+            ];
+        })->all();
+
+        $genderBreakdown = new ArraySheet(
+            'Gender Breakdown',
+            [
+                'Department',
+                'Scheduled M', 'Scheduled F', 'Scheduled U',
+                'Present M', 'Present F', 'Present U',
+                'Absent M', 'Absent F', 'Absent U',
+                'Pending M', 'Pending F', 'Pending U',
+            ],
+            $genderRows,
             landscape: true,
         );
 
@@ -123,6 +154,6 @@ class DepartmentReportExport implements WithMultipleSheets
             landscape: true,
         );
 
-        return [$executive, $departmentSummary, $detail, $extra];
+        return [$executive, $departmentSummary, $genderBreakdown, $detail, $extra];
     }
 }

@@ -25,35 +25,29 @@ class DepartmentDetailReportExport implements WithMultipleSheets
 
         $deptNames = $sections->map(fn ($s) => $s['department']->name)->implode(', ');
 
+        // One unified table: scalar KPI/metadata rows carry their value in the
+        // Total column only; the four status rows (Scheduled/Present/Absent/
+        // Pending) are a real Male/Female/Unknown/Total matrix, so gender
+        // composition for every status is visible without a second table or
+        // a 20-column sheet. Reconciles both ways: horizontally (Male+Female+
+        // Unknown=Total) and vertically (Present+Absent+Pending=Scheduled).
         $summaryRows = [];
         foreach ($sections as $section) {
             $g = $section['genderBreakdown'];
-            $summaryRows[] = ['', ''];
-            $summaryRows[] = [$section['department']->name, ''];
-            $summaryRows[] = ['Report Date / Session', $scopeLabel];
-            $summaryRows[] = ['Total Scheduled', $section['scheduled']];
-            $summaryRows[] = ['Present', $section['present']];
-            $summaryRows[] = ['Absent', $section['absent']];
-            $summaryRows[] = ['Pending', $section['pending']];
-            $summaryRows[] = ['Attendance Rate', $section['rate'] !== null ? $section['rate'].'%' : 'N/A'];
-            $summaryRows[] = ['Extra Present', $section['extraCount']];
-            $summaryRows[] = ['Scheduled — Male', $g['scheduled']['male']];
-            $summaryRows[] = ['Scheduled — Female', $g['scheduled']['female']];
-            $summaryRows[] = ['Scheduled — Unknown', $g['scheduled']['unknown']];
-            $summaryRows[] = ['Present — Male', $g['present']['male']];
-            $summaryRows[] = ['Present — Female', $g['present']['female']];
-            $summaryRows[] = ['Present — Unknown', $g['present']['unknown']];
-            $summaryRows[] = ['Absent — Male', $g['absent']['male']];
-            $summaryRows[] = ['Absent — Female', $g['absent']['female']];
-            $summaryRows[] = ['Absent — Unknown', $g['absent']['unknown']];
-            $summaryRows[] = ['Pending — Male', $g['pending']['male']];
-            $summaryRows[] = ['Pending — Female', $g['pending']['female']];
-            $summaryRows[] = ['Pending — Unknown', $g['pending']['unknown']];
+            $summaryRows[] = ['', '', '', '', ''];
+            $summaryRows[] = [$section['department']->name, '', '', '', ''];
+            $summaryRows[] = ['Report Date / Session', '', '', '', $scopeLabel];
+            $summaryRows[] = ['Scheduled', $g['scheduled']['male'], $g['scheduled']['female'], $g['scheduled']['unknown'], $section['scheduled']];
+            $summaryRows[] = ['Present', $g['present']['male'], $g['present']['female'], $g['present']['unknown'], $section['present']];
+            $summaryRows[] = ['Absent', $g['absent']['male'], $g['absent']['female'], $g['absent']['unknown'], $section['absent']];
+            $summaryRows[] = ['Pending', $g['pending']['male'], $g['pending']['female'], $g['pending']['unknown'], $section['pending']];
+            $summaryRows[] = ['Attendance Rate', '', '', '', $section['rate'] !== null ? $section['rate'].'%' : 'N/A'];
+            $summaryRows[] = ['Extra Present', '', '', '', $section['extraCount']];
         }
 
         $summary = new ArraySheet(
             'Department Summary',
-            ['Field', 'Value'],
+            ['Metric', 'Male', 'Female', 'Unknown', 'Total'],
             $summaryRows,
             reportTitle: 'KG Attendance — Department Report',
             subtitle: $deptNames.' · '.$scopeLabel,

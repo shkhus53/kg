@@ -270,7 +270,7 @@ class DepartmentDetailReportTest extends TestCase
 
         $spreadsheet = IOFactory::load($path);
         $titles = array_map(fn ($s) => $s->getTitle(), $spreadsheet->getAllSheets());
-        $this->assertSame(['Executive Summary', 'Department Summary', 'Detailed Attendance', 'Extra Present'], $titles);
+        $this->assertSame(['Executive Summary', 'Department Summary', 'Gender Breakdown', 'Detailed Attendance', 'Extra Present'], $titles);
 
         // 4 (deptA) + 2 (deptB) = 6 scheduled assignments across both departments.
         $detail = $spreadsheet->getSheetByName('Detailed Attendance');
@@ -292,5 +292,60 @@ class DepartmentDetailReportTest extends TestCase
         $g = $data['genderBreakdown'];
         $this->assertSame($data['scheduled'], $g['scheduled']['male'] + $g['scheduled']['female'] + $g['scheduled']['unknown']);
         $this->assertSame(1, $data['extraCount']); // extra present stays outside scheduled
+    }
+
+    public function test_department_summary_gender_matrix_reconciles_in_generated_excel(): void
+    {
+        [$session, $deptA] = $this->seedTwoDepartments();
+        $data = app(ReportService::class)->departmentDetailReport([$deptA->id], $session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
+
+        \Maatwebsite\Excel\Facades\Excel::store(new DepartmentDetailReportExport($data), 'test-dept-matrix.xlsx', 'local');
+        $path = storage_path('app/private/test-dept-matrix.xlsx');
+
+        $spreadsheet = IOFactory::load($path);
+        $sheet = $spreadsheet->getSheetByName('Department Summary');
+
+        // Header: Metric | Male | Female | Unknown | Total
+        $this->assertSame(['Metric', 'Male', 'Female', 'Unknown', 'Total'], [
+            $sheet->getCell('A4')->getValue(), $sheet->getCell('B4')->getValue(),
+            $sheet->getCell('C4')->getValue(), $sheet->getCell('D4')->getValue(), $sheet->getCell('E4')->getValue(),
+        ]);
+
+        // row5=blank spacer, row6=dept name, row7=report date, row8=Scheduled.
+        $this->assertSame('Scheduled', $sheet->getCell('A8')->getValue());
+        $male = $sheet->getCell('B8')->getValue();
+        $female = $sheet->getCell('C8')->getValue();
+        $unknown = $sheet->getCell('D8')->getValue();
+        $total = $sheet->getCell('E8')->getValue();
+        $this->assertSame($total, $male + $female + $unknown);
+        $this->assertSame(4, $total); // matches seedTwoDepartments()'s department A: 4 assignments
+
+        unlink($path);
+    }
+
+    public function test_all_departments_gender_breakdown_sheet_reconciles(): void
+    {
+        [$session, $deptA, $deptB] = $this->seedTwoDepartments();
+        $data = app(ReportService::class)->departmentReport($session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
+
+        \Maatwebsite\Excel\Facades\Excel::store(new \App\Exports\DepartmentReportExport($data), 'test-all-dept-gender.xlsx', 'local');
+        $path = storage_path('app/private/test-all-dept-gender.xlsx');
+
+        $spreadsheet = IOFactory::load($path);
+        $sheet = $spreadsheet->getSheetByName('Gender Breakdown');
+
+        $this->assertSame(
+            ['Department', 'Scheduled M', 'Scheduled F', 'Scheduled U', 'Present M', 'Present F', 'Present U', 'Absent M', 'Absent F', 'Absent U', 'Pending M', 'Pending F', 'Pending U'],
+            array_map(fn ($c) => $sheet->getCell($c.'1')->getValue(), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'])
+        );
+
+        // Department Summary's compact table must not have gender columns anymore.
+        $deptSummary = $spreadsheet->getSheetByName('Department Summary');
+        $this->assertSame(
+            ['Department', 'Scheduled', 'Present', 'Absent', 'Pending', 'Attendance Rate'],
+            array_map(fn ($c) => $deptSummary->getCell($c.'1')->getValue(), ['A', 'B', 'C', 'D', 'E', 'F'])
+        );
+
+        unlink($path);
     }
 }
