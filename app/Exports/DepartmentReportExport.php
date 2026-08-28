@@ -15,11 +15,17 @@ class DepartmentReportExport implements WithMultipleSheets
         $scopeLabel = $r['session'] ? $r['session']->name.' ('.$r['session']->date->format('d M Y').')'
             : $r['from'].' to '.$r['to'];
 
-        $summary = new ArraySheet('Summary', ['Field', 'Value'], [
-            ['Scope', $scopeLabel],
-            ['Departments', $r['departments']->count()],
-            ['Generated At', now()->format('d M Y H:i')],
-        ]);
+        $summary = new ArraySheet(
+            'Summary',
+            ['Field', 'Value'],
+            [
+                ['Scope', $scopeLabel],
+                ['Departments', $r['departments']->count()],
+                ['Generated At', now()->format('d M Y H:i')],
+            ],
+            reportTitle: 'KG Attendance — Department Report',
+            subtitle: $scopeLabel,
+        );
 
         $rows = $r['departments']->map(fn ($d) => [
             $d->department_name,
@@ -28,12 +34,16 @@ class DepartmentReportExport implements WithMultipleSheets
             $d->absent,
             $d->pending,
             $d->rate.'%',
+            $d->genderBreakdown['scheduled']['male'],
+            $d->genderBreakdown['scheduled']['female'],
+            $d->genderBreakdown['scheduled']['unknown'],
         ])->all();
 
         $details = new ArraySheet(
             'Department Details',
-            ['Department', 'Scheduled', 'Present', 'Absent', 'Pending', 'Rate'],
+            ['Department', 'Scheduled', 'Present', 'Absent', 'Pending', 'Rate', 'Male', 'Female', 'Unknown'],
             $rows,
+            landscape: true,
         );
 
         return [$summary, $details];

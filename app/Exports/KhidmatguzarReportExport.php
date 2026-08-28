@@ -13,18 +13,25 @@ class KhidmatguzarReportExport implements WithMultipleSheets
         $r = $this->report;
         $kg = $r['khidmatguzar'];
 
-        $summary = new ArraySheet('Profile Summary', ['Field', 'Value'], [
-            ['Full Name', $kg->full_name],
-            ['ITS Number', $kg->its_id],
-            ['Jamaat', $kg->jamaat],
-            ['Total Scheduled Duties', $r['total']],
-            ['Present', $r['present']],
-            ['Absent', $r['absent']],
-            ['Pending', $r['pending']],
-            ['Extra Present', $r['extraCount']],
-            ['Attendance Rate', $r['rate'] !== null ? $r['rate'].'%' : 'N/A'],
-            ['Generated At', now()->format('d M Y H:i')],
-        ]);
+        $summary = new ArraySheet(
+            'Profile Summary',
+            ['Field', 'Value'],
+            [
+                ['Full Name', $kg->full_name],
+                ['ITS Number', $kg->its_id],
+                ['Jamaat', $kg->jamaat],
+                ['', ''],
+                ['Total Scheduled Duties', $r['total']],
+                ['Present', $r['present']],
+                ['Absent', $r['absent']],
+                ['Pending', $r['pending']],
+                ['Extra Present', $r['extraCount']],
+                ['Attendance Rate', $r['rate'] !== null ? $r['rate'].'%' : 'N/A'],
+                ['Generated At', now()->format('d M Y H:i')],
+            ],
+            reportTitle: 'KG Attendance — Khidmatguzar Report',
+            subtitle: $kg->full_name.' · ITS '.$kg->its_id,
+        );
 
         $deptRows = $r['departmentBreakdown']->map(fn ($d) => [
             $d->department_name,
@@ -38,6 +45,7 @@ class KhidmatguzarReportExport implements WithMultipleSheets
             'Department Breakdown',
             ['Department', 'Duties', 'Present', 'Absent', 'Rate'],
             $deptRows,
+            landscape: true,
         );
 
         $historyRows = $r['history']->map(fn ($a) => [
@@ -53,6 +61,7 @@ class KhidmatguzarReportExport implements WithMultipleSheets
             'Duty History',
             ['Date', 'Session', 'Department', 'Block', 'Seat', 'Status'],
             $historyRows,
+            landscape: true,
         );
 
         $extraRows = $r['extraHistory']->map(fn ($e) => [
@@ -67,6 +76,7 @@ class KhidmatguzarReportExport implements WithMultipleSheets
             'Extra Present',
             ['Date', 'Session', 'Department', 'Marked At', 'Remark'],
             $extraRows,
+            landscape: true,
         );
 
         return [$summary, $departments, $history, $extra];

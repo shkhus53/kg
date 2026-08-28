@@ -15,31 +15,39 @@ class SessionAttendanceExport implements WithMultipleSheets
         $session = $r['dutySession'];
         $g = $r['genderBreakdown'];
 
-        $summary = new ArraySheet('Summary', ['Field', 'Value'], [
-            ['Session Name', $session->name],
-            ['Date', $session->date->format('d M Y')],
-            ['Status', ucfirst($session->status)],
-            ['Total Scheduled', $r['scheduled']],
-            ['Present', $r['present']],
-            ['Absent', $r['absent']],
-            ['Pending', $r['pending']],
-            ['Extra Present', $r['extraCount']],
-            ['Attendance Rate', $r['rate'] !== null ? $r['rate'].'%' : 'N/A'],
-            ['', ''],
-            ['Male Scheduled', $g['scheduled']['male']],
-            ['Female Scheduled', $g['scheduled']['female']],
-            ['Unknown Scheduled', $g['scheduled']['unknown']],
-            ['Male Present', $g['present']['male']],
-            ['Female Present', $g['present']['female']],
-            ['Unknown Present', $g['present']['unknown']],
-            ['Male Absent', $g['absent']['male']],
-            ['Female Absent', $g['absent']['female']],
-            ['Unknown Absent', $g['absent']['unknown']],
-            ['Male Pending', $g['pending']['male']],
-            ['Female Pending', $g['pending']['female']],
-            ['Unknown Pending', $g['pending']['unknown']],
-            ['Generated At', now()->format('d M Y H:i')],
-        ]);
+        $summary = new ArraySheet(
+            'Summary',
+            ['Field', 'Value'],
+            [
+                ['Session Name', $session->name],
+                ['Date', $session->date->format('d M Y')],
+                ['Status', ucfirst($session->status)],
+                ['', ''],
+                ['Total Scheduled', $r['scheduled']],
+                ['Present', $r['present']],
+                ['Absent', $r['absent']],
+                ['Pending', $r['pending']],
+                ['Extra Present', $r['extraCount']],
+                ['Attendance Rate', $r['rate'] !== null ? $r['rate'].'%' : 'N/A'],
+                ['', ''],
+                ['Male Scheduled', $g['scheduled']['male']],
+                ['Female Scheduled', $g['scheduled']['female']],
+                ['Unknown Scheduled', $g['scheduled']['unknown']],
+                ['Male Present', $g['present']['male']],
+                ['Female Present', $g['present']['female']],
+                ['Unknown Present', $g['present']['unknown']],
+                ['Male Absent', $g['absent']['male']],
+                ['Female Absent', $g['absent']['female']],
+                ['Unknown Absent', $g['absent']['unknown']],
+                ['Male Pending', $g['pending']['male']],
+                ['Female Pending', $g['pending']['female']],
+                ['Unknown Pending', $g['pending']['unknown']],
+                ['', ''],
+                ['Generated At', now()->format('d M Y H:i')],
+            ],
+            reportTitle: 'KG Attendance — Session Report',
+            subtitle: $session->name.' · '.$session->date->format('d M Y').' · '.ucfirst($session->status),
+        );
 
         $attendanceRows = $r['assignments']->map(fn ($a) => [
             $a->full_name_snapshot,
@@ -58,6 +66,7 @@ class SessionAttendanceExport implements WithMultipleSheets
             'Attendance',
             ['Full Name', 'ITS Number', 'Gender', 'Department', 'Block', 'Seat', 'Day', 'Status', 'Marked At', 'Marked By'],
             $attendanceRows,
+            landscape: true,
         );
 
         $departmentRows = $r['departments']->map(fn ($d) => [
@@ -76,6 +85,7 @@ class SessionAttendanceExport implements WithMultipleSheets
             'Departments',
             ['Department', 'Scheduled', 'Present', 'Absent', 'Pending', 'Rate', 'Male', 'Female', 'Unknown'],
             $departmentRows,
+            landscape: true,
         );
 
         $extraRows = $r['extraPresents']->map(fn ($e) => [
@@ -91,6 +101,7 @@ class SessionAttendanceExport implements WithMultipleSheets
             'Extra Present',
             ['Full Name', 'ITS Number', 'Department', 'Marked At', 'Marked By', 'Remark'],
             $extraRows,
+            landscape: true,
         );
 
         return [$summary, $departments, $attendance, $extra];

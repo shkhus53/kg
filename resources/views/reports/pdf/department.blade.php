@@ -10,7 +10,7 @@
     <h1>Department Attendance Report</h1>
     <div class="meta">
         @if ($session)
-            {{ $session->name }} &middot; {{ $session->date->format('d M Y') }}
+            {{ $session->name }} <span class="sep">&middot;</span> {{ $session->date->format('d M Y') }}
         @else
             {{ \Carbon\Carbon::parse($from)->format('d M Y') }} &ndash; {{ \Carbon\Carbon::parse($to)->format('d M Y') }}
         @endif
@@ -19,19 +19,22 @@
 </div>
 
 <h2 class="section">Departments ({{ $departments->count() }})</h2>
-<table>
+<table class="data">
     <thead>
-        <tr><th>Department</th><th>Scheduled</th><th>Present</th><th>Absent</th><th>Pending</th><th>Rate</th></tr>
+        <tr><th>Department</th><th class="num">Scheduled</th><th class="num">Present</th><th class="num">Absent</th><th class="num">Pending</th><th class="num">Rate</th><th class="num">Male</th><th class="num">Female</th><th class="num">Unknown</th></tr>
     </thead>
     <tbody>
         @foreach ($departments as $d)
         <tr>
             <td>{{ $d->department_name }}</td>
-            <td>{{ $d->scheduled }}</td>
-            <td>{{ $d->present }}</td>
-            <td>{{ $d->absent }}</td>
-            <td>{{ $d->pending }}</td>
-            <td>{{ $d->rate }}%</td>
+            <td class="num">{{ $d->scheduled }}</td>
+            <td class="num">{{ $d->present }}</td>
+            <td class="num">{{ $d->absent }}</td>
+            <td class="num">{{ $d->pending }}</td>
+            <td class="num">{{ $d->rate }}%</td>
+            <td class="num g-male">{{ $d->genderBreakdown['scheduled']['male'] }}</td>
+            <td class="num g-female">{{ $d->genderBreakdown['scheduled']['female'] }}</td>
+            <td class="num g-unknown">{{ $d->genderBreakdown['scheduled']['unknown'] }}</td>
         </tr>
         @endforeach
     </tbody>
