@@ -50,6 +50,10 @@
                 <p class="text-xs font-medium text-slate-400">{{ __('Attendance Rate') }}</p>
                 <p class="text-3xl font-bold text-emerald-600">{{ $rate }}%</p>
             </div>
+
+            <div class="mt-4 border-t border-slate-100 pt-3">
+                <x-shell.gender-breakdown :breakdown="$genderBreakdown" />
+            </div>
         </x-shell.card>
 
         @if ($dutySession->isActive() && $pending === 0 && auth()->user()->canManageSessions())

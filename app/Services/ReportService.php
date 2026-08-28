@@ -7,6 +7,7 @@ use App\Models\DutyAssignment;
 use App\Models\DutySession;
 use App\Models\ExtraPresent;
 use App\Models\Khidmatguzar;
+use App\Support\Gender;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -36,13 +37,15 @@ class ReportService
                 COUNT(*) as scheduled,
                 SUM(current_status = 'present') as present,
                 SUM(current_status = 'absent') as absent,
-                SUM(current_status = 'pending') as pending
+                SUM(current_status = 'pending') as pending,
+                ".$this->genderSelectRaw('gender_snapshot')."
             ")->first();
 
         $scheduled = (int) ($stats->scheduled ?? 0);
         $present = (int) ($stats->present ?? 0);
         $absent = (int) ($stats->absent ?? 0);
         $pending = (int) ($stats->pending ?? 0);
+        $genderBreakdown = $this->genderBreakdownFromRow($stats);
 
         $assignments = DutyAssignment::where('duty_session_id', $dutySession->id)
             ->with(['khidmatguzar:id,its_id,full_name', 'department:id,name', 'attendanceMarkedBy:id,name'])
@@ -63,10 +66,25 @@ class ReportService
             'pending' => $pending,
             'extraCount' => $extraPresents->count(),
             'rate' => $scheduled > 0 ? round(100 * $present / $scheduled, 1) : null,
+            'genderBreakdown' => $genderBreakdown,
             'departments' => $this->departmentBreakdown(sessionId: $dutySession->id),
             'assignments' => $assignments,
             'extraPresents' => $extraPresents,
         ];
+    }
+
+    /**
+     * Lightweight gender split for one session (Scheduled/Present/Absent/Pending
+     * only, no assignment/extra-present hydration) — for places like the
+     * Dashboard that only need the counters, not the full session report.
+     */
+    public function sessionGenderSummary(DutySession $dutySession): array
+    {
+        $stats = DutyAssignment::where('duty_session_id', $dutySession->id)
+            ->selectRaw($this->genderSelectRaw('gender_snapshot'))
+            ->first();
+
+        return $this->genderBreakdownFromRow($stats);
     }
 
     /**
@@ -94,13 +112,15 @@ class ReportService
                 COUNT(*) as total,
                 SUM(current_status = 'present') as present,
                 SUM(current_status = 'absent') as absent,
-                SUM(current_status = 'pending') as pending
+                SUM(current_status = 'pending') as pending,
+                ".$this->genderSelectRaw('gender_snapshot')."
             ")->first();
 
         $total = (int) ($stats->total ?? 0);
         $present = (int) ($stats->present ?? 0);
         $absent = (int) ($stats->absent ?? 0);
         $pending = (int) ($stats->pending ?? 0);
+        $genderBreakdown = $this->genderBreakdownFromRow($stats);
 
         $departmentBreakdown = DutyAssignment::where('duty_assignments.khidmatguzar_id', $khidmatguzar->id)
             ->join('departments', 'departments.id', '=', 'duty_assignments.department_id')
@@ -140,6 +160,7 @@ class ReportService
             'pending' => $pending,
             'extraCount' => $extraHistory->count(),
             'rate' => $total > 0 ? round(100 * $present / $total, 1) : null,
+            'genderBreakdown' => $genderBreakdown,
             'departmentBreakdown' => $departmentBreakdown,
             'history' => $history,
             'extraHistory' => $extraHistory,
@@ -168,14 +189,61 @@ class ReportService
                 COUNT(*) as scheduled,
                 SUM(duty_assignments.current_status = 'present') as present,
                 SUM(duty_assignments.current_status = 'absent') as absent,
-                SUM(duty_assignments.current_status = 'pending') as pending
+                SUM(duty_assignments.current_status = 'pending') as pending,
+                ".$this->genderSelectRaw('duty_assignments.gender_snapshot')."
             ")
             ->get()
             ->map(function ($row) {
                 $row->rate = $row->scheduled > 0 ? round(100 * $row->present / $row->scheduled, 1) : 0;
+                $row->genderBreakdown = $this->genderBreakdownFromRow($row);
 
                 return $row;
             });
+    }
+
+    /**
+     * Conditional-sum SQL fragment bucketing every row into Male/Female/Unknown
+     * (see App\Support\Gender) for scheduled + each of present/absent/pending.
+     * Shared by every report method so the bucketing logic exists in exactly
+     * one place.
+     */
+    private function genderSelectRaw(string $genderColumn, string $statusColumn = 'current_status'): string
+    {
+        $g = Gender::caseSql($genderColumn);
+
+        return "
+            SUM({$g} = 'Male') as male_scheduled,
+            SUM({$g} = 'Female') as female_scheduled,
+            SUM({$g} = 'Unknown') as unknown_scheduled,
+            SUM({$g} = 'Male' AND {$statusColumn} = 'present') as male_present,
+            SUM({$g} = 'Female' AND {$statusColumn} = 'present') as female_present,
+            SUM({$g} = 'Unknown' AND {$statusColumn} = 'present') as unknown_present,
+            SUM({$g} = 'Male' AND {$statusColumn} = 'absent') as male_absent,
+            SUM({$g} = 'Female' AND {$statusColumn} = 'absent') as female_absent,
+            SUM({$g} = 'Unknown' AND {$statusColumn} = 'absent') as unknown_absent,
+            SUM({$g} = 'Male' AND {$statusColumn} = 'pending') as male_pending,
+            SUM({$g} = 'Female' AND {$statusColumn} = 'pending') as female_pending,
+            SUM({$g} = 'Unknown' AND {$statusColumn} = 'pending') as unknown_pending
+        ";
+    }
+
+    /**
+     * @return array{scheduled: array, present: array, absent: array, pending: array}
+     */
+    private function genderBreakdownFromRow($row): array
+    {
+        $pick = fn (string $status) => [
+            'male' => (int) ($row->{"male_{$status}"} ?? 0),
+            'female' => (int) ($row->{"female_{$status}"} ?? 0),
+            'unknown' => (int) ($row->{"unknown_{$status}"} ?? 0),
+        ];
+
+        return [
+            'scheduled' => $pick('scheduled'),
+            'present' => $pick('present'),
+            'absent' => $pick('absent'),
+            'pending' => $pick('pending'),
+        ];
     }
 
     /**

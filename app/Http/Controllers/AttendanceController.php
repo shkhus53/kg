@@ -8,13 +8,34 @@ use App\Models\DutySession;
 use App\Models\ExtraPresent;
 use App\Models\Khidmatguzar;
 use App\Services\AttendanceService;
+use App\Services\ReportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class AttendanceController extends Controller
 {
-    public function __construct(private readonly AttendanceService $attendance) {}
+    public function __construct(
+        private readonly AttendanceService $attendance,
+        private readonly ReportService $reports,
+    ) {}
+
+    /**
+     * Bottom-nav Search FAB target: no session context to link to directly, so
+     * resolve the active session server-side. Falls back to Sessions with a
+     * clear message when nothing is active, rather than a dead link or 404.
+     */
+    public function liveRedirect(): RedirectResponse
+    {
+        $activeSession = DutySession::where('status', 'active')->latest('date')->latest('id')->first();
+
+        if (! $activeSession) {
+            return redirect()->route('sessions.index')
+                ->with('flash_info', 'No active session. Activate a session to take attendance.');
+        }
+
+        return redirect()->route('attendance.shell.live', $activeSession);
+    }
 
     public function live(Request $request, DutySession $dutySession): View
     {
@@ -176,6 +197,7 @@ class AttendanceController extends Controller
             'search' => $search,
             'pendingAssignments' => $query->orderBy('id')->get(),
             'counts' => $this->counts($dutySession),
+            'genderBreakdown' => $this->reports->sessionGenderSummary($dutySession),
         ]);
     }
 

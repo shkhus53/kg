@@ -40,14 +40,28 @@
             <p class="mt-1 text-xs text-slate-400">{{ __('Extra Present') }}: {{ $extraCount }}</p>
         </x-shell.card>
 
+        <x-shell.card>
+            <h3 class="mb-2 text-sm font-semibold text-slate-700">{{ __('Gender Breakdown') }}</h3>
+            <x-shell.gender-breakdown :breakdown="$genderBreakdown" />
+        </x-shell.card>
+
         @if ($departments->isNotEmpty())
             <x-shell.card>
                 <h3 class="mb-3 text-sm font-semibold text-slate-700">{{ __('Department Summary') }}</h3>
-                <div class="space-y-2">
+                <div class="space-y-3">
                     @foreach ($departments as $dept)
-                        <div class="flex justify-between text-sm">
-                            <span class="text-slate-700">{{ $dept->department_name }}</span>
-                            <span class="text-slate-500">{{ $dept->scheduled }} {{ __('sched.') }} &middot; {{ $dept->rate }}%</span>
+                        <div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-slate-700">{{ $dept->department_name }}</span>
+                                <span class="text-slate-500">{{ $dept->scheduled }} {{ __('sched.') }} &middot; {{ $dept->rate }}%</span>
+                            </div>
+                            <p class="mt-0.5 text-[11px] text-slate-400">
+                                <span class="text-blue-600">{{ __('M') }} {{ $dept->genderBreakdown['scheduled']['male'] }}</span>
+                                &middot; <span class="text-violet-600">{{ __('F') }} {{ $dept->genderBreakdown['scheduled']['female'] }}</span>
+                                @if ($dept->genderBreakdown['scheduled']['unknown'] > 0)
+                                    &middot; <span>{{ __('U') }} {{ $dept->genderBreakdown['scheduled']['unknown'] }}</span>
+                                @endif
+                            </p>
                         </div>
                     @endforeach
                 </div>
@@ -61,7 +75,7 @@
                     <div class="flex items-center justify-between rounded-xl border border-slate-100 p-3">
                         <div class="min-w-0">
                             <p class="truncate text-sm font-medium text-slate-900">{{ $a->full_name_snapshot }}</p>
-                            <p class="truncate text-xs text-slate-400">{{ $a->khidmatguzar->its_id }} &middot; {{ $a->department->name }} @if($a->seat) &middot; {{ __('Seat') }} {{ $a->seat }} @endif</p>
+                            <p class="truncate text-xs text-slate-400">{{ $a->khidmatguzar->its_id }} &middot; {{ $a->department->name }} @if($a->seat) &middot; {{ __('Seat') }} {{ $a->seat }} @endif &middot; {{ \App\Support\Gender::shortLabel($a->gender_snapshot) }}</p>
                         </div>
                         <x-shell.badge :tone="$a->current_status === 'present' ? 'green' : ($a->current_status === 'absent' ? 'red' : 'orange')">{{ $a->current_status }}</x-shell.badge>
                     </div>

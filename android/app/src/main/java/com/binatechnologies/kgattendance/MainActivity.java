@@ -1,11 +1,15 @@
 package com.binatechnologies.kgattendance;
 
 import android.app.Activity;
+import android.app.DownloadManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.webkit.CookieManager;
+import android.webkit.MimeTypeMap;
+import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -74,6 +78,8 @@ public class MainActivity extends Activity {
             }
         });
 
+        webView.setDownloadListener(this::downloadFile);
+
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> callback, FileChooserParams params) {
@@ -139,6 +145,49 @@ public class MainActivity extends Activity {
             webView.setLayoutParams(params);
             return WindowInsetsCompat.CONSUMED;
         });
+    }
+
+    /**
+     * The web app's Export PDF / Export Excel buttons are ordinary GET links whose
+     * response is Content-Disposition: attachment. Stock WebView silently drops such
+     * responses unless a DownloadListener is registered — that's the entire reason the
+     * buttons "did nothing." DownloadManager performs the actual write to the public
+     * Downloads folder with its own system-level access, so no WRITE_EXTERNAL_STORAGE
+     * (or any other storage) permission is needed on any supported API level here.
+     */
+    private void downloadFile(String url, String userAgent, String contentDisposition, String mimeType, long contentLength) {
+        try {
+            String cookies = CookieManager.getInstance().getCookie(url);
+            String filename = URLUtil.guessFileName(url, contentDisposition, mimeType);
+
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+            if (cookies != null) {
+                request.addRequestHeader("Cookie", cookies);
+            }
+            request.addRequestHeader("User-Agent", userAgent);
+            request.setMimeType(resolveMimeType(mimeType, filename));
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
+            request.allowScanningByMediaScanner();
+
+            DownloadManager downloadManager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+            if (downloadManager != null) {
+                downloadManager.enqueue(request);
+                Toast.makeText(this, "Downloading " + filename, Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Unable to download file", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private String resolveMimeType(String mimeType, String filename) {
+        if (mimeType != null && !mimeType.isEmpty() && !mimeType.equals("application/octet-stream")) {
+            return mimeType;
+        }
+        String extension = MimeTypeMap.getFileExtensionFromUrl(filename);
+        String guessed = extension != null ? MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) : null;
+
+        return guessed != null ? guessed : "application/octet-stream";
     }
 
     @Override

@@ -16,6 +16,13 @@
             <div class="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-700">{{ session('status') }}</div>
         @endif
 
+        @foreach (['flash_success' => 'green', 'flash_info' => 'blue', 'flash_warning' => 'orange', 'flash_error' => 'red'] as $key => $tone)
+            @if (session($key))
+                @php $bg = ['green' => 'bg-emerald-50 text-emerald-700', 'blue' => 'bg-blue-50 text-blue-700', 'orange' => 'bg-orange-50 text-orange-700', 'red' => 'bg-red-50 text-red-700'][$tone]; @endphp
+                <div class="rounded-2xl {{ $bg }} p-4 text-sm">{{ session($key) }}</div>
+            @endif
+        @endforeach
+
         @if ($sessions->isEmpty())
             <x-shell.card class="text-center text-slate-400">
                 {{ __('No duty sessions yet.') }}

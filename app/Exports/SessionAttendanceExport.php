@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Support\Gender;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
 class SessionAttendanceExport implements WithMultipleSheets
@@ -12,6 +13,7 @@ class SessionAttendanceExport implements WithMultipleSheets
     {
         $r = $this->report;
         $session = $r['dutySession'];
+        $g = $r['genderBreakdown'];
 
         $summary = new ArraySheet('Summary', ['Field', 'Value'], [
             ['Session Name', $session->name],
@@ -23,12 +25,26 @@ class SessionAttendanceExport implements WithMultipleSheets
             ['Pending', $r['pending']],
             ['Extra Present', $r['extraCount']],
             ['Attendance Rate', $r['rate'] !== null ? $r['rate'].'%' : 'N/A'],
+            ['', ''],
+            ['Male Scheduled', $g['scheduled']['male']],
+            ['Female Scheduled', $g['scheduled']['female']],
+            ['Unknown Scheduled', $g['scheduled']['unknown']],
+            ['Male Present', $g['present']['male']],
+            ['Female Present', $g['present']['female']],
+            ['Unknown Present', $g['present']['unknown']],
+            ['Male Absent', $g['absent']['male']],
+            ['Female Absent', $g['absent']['female']],
+            ['Unknown Absent', $g['absent']['unknown']],
+            ['Male Pending', $g['pending']['male']],
+            ['Female Pending', $g['pending']['female']],
+            ['Unknown Pending', $g['pending']['unknown']],
             ['Generated At', now()->format('d M Y H:i')],
         ]);
 
         $attendanceRows = $r['assignments']->map(fn ($a) => [
             $a->full_name_snapshot,
             $a->khidmatguzar->its_id,
+            Gender::shortLabel($a->gender_snapshot),
             $a->department->name,
             $a->block_name,
             $a->seat,
@@ -40,7 +56,7 @@ class SessionAttendanceExport implements WithMultipleSheets
 
         $attendance = new ArraySheet(
             'Attendance',
-            ['Full Name', 'ITS Number', 'Department', 'Block', 'Seat', 'Day', 'Status', 'Marked At', 'Marked By'],
+            ['Full Name', 'ITS Number', 'Gender', 'Department', 'Block', 'Seat', 'Day', 'Status', 'Marked At', 'Marked By'],
             $attendanceRows,
         );
 
@@ -51,11 +67,14 @@ class SessionAttendanceExport implements WithMultipleSheets
             $d->absent,
             $d->pending,
             $d->rate.'%',
+            $d->genderBreakdown['scheduled']['male'],
+            $d->genderBreakdown['scheduled']['female'],
+            $d->genderBreakdown['scheduled']['unknown'],
         ])->all();
 
         $departments = new ArraySheet(
             'Departments',
-            ['Department', 'Scheduled', 'Present', 'Absent', 'Pending', 'Rate'],
+            ['Department', 'Scheduled', 'Present', 'Absent', 'Pending', 'Rate', 'Male', 'Female', 'Unknown'],
             $departmentRows,
         );
 

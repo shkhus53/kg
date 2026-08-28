@@ -25,11 +25,28 @@
     <tr><td>Attendance Rate</td><td class="rate">{{ $rate !== null ? $rate.'%' : 'N/A' }}</td></tr>
 </table>
 
+<h2 class="section">Gender Breakdown</h2>
+<table>
+    <thead>
+        <tr><th></th><th>Male</th><th>Female</th><th>Unknown</th></tr>
+    </thead>
+    <tbody>
+        @foreach (['scheduled' => 'Scheduled', 'present' => 'Present', 'absent' => 'Absent', 'pending' => 'Pending'] as $key => $label)
+        <tr>
+            <td>{{ $label }}</td>
+            <td>{{ $genderBreakdown[$key]['male'] }}</td>
+            <td>{{ $genderBreakdown[$key]['female'] }}</td>
+            <td>{{ $genderBreakdown[$key]['unknown'] }}</td>
+        </tr>
+        @endforeach
+    </tbody>
+</table>
+
 @if ($departments->isNotEmpty())
 <h2 class="section">Department Summary</h2>
 <table>
     <thead>
-        <tr><th>Department</th><th>Scheduled</th><th>Present</th><th>Absent</th><th>Pending</th><th>Rate</th></tr>
+        <tr><th>Department</th><th>Scheduled</th><th>Present</th><th>Absent</th><th>Pending</th><th>Rate</th><th>Male</th><th>Female</th><th>Unknown</th></tr>
     </thead>
     <tbody>
         @foreach ($departments as $d)
@@ -40,6 +57,9 @@
             <td>{{ $d->absent }}</td>
             <td>{{ $d->pending }}</td>
             <td>{{ $d->rate }}%</td>
+            <td>{{ $d->genderBreakdown['scheduled']['male'] }}</td>
+            <td>{{ $d->genderBreakdown['scheduled']['female'] }}</td>
+            <td>{{ $d->genderBreakdown['scheduled']['unknown'] }}</td>
         </tr>
         @endforeach
     </tbody>
@@ -49,13 +69,14 @@
 <h2 class="section">Attendance Detail ({{ $assignments->count() }})</h2>
 <table>
     <thead>
-        <tr><th>Name</th><th>ITS</th><th>Department</th><th>Block</th><th>Seat</th><th>Day</th><th>Status</th><th>Marked At</th></tr>
+        <tr><th>Name</th><th>ITS</th><th>Gender</th><th>Department</th><th>Block</th><th>Seat</th><th>Day</th><th>Status</th><th>Marked At</th></tr>
     </thead>
     <tbody>
         @foreach ($assignments as $a)
         <tr>
             <td>{{ $a->full_name_snapshot }}</td>
             <td>{{ $a->khidmatguzar->its_id }}</td>
+            <td>{{ \App\Support\Gender::shortLabel($a->gender_snapshot) }}</td>
             <td>{{ $a->department->name }}</td>
             <td>{{ $a->block_name }}</td>
             <td>{{ $a->seat }}</td>

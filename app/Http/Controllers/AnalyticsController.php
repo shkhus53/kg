@@ -7,6 +7,7 @@ use App\Models\DutyAssignment;
 use App\Models\DutySession;
 use App\Models\ExtraPresent;
 use App\Models\Khidmatguzar;
+use App\Support\Gender;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -36,12 +37,24 @@ class AnalyticsController extends Controller
             $base->where('duty_assignments.duty_session_id', $sessionId);
         }
 
+        $genderCase = Gender::caseSql('duty_assignments.gender_snapshot');
         $totals = (clone $base)->selectRaw("
             COUNT(*) as scheduled,
             SUM(current_status = 'present') as present,
             SUM(current_status = 'absent') as absent,
-            SUM(current_status = 'pending') as pending
+            SUM(current_status = 'pending') as pending,
+            SUM({$genderCase} = 'Male') as male_scheduled,
+            SUM({$genderCase} = 'Female') as female_scheduled,
+            SUM({$genderCase} = 'Unknown') as unknown_scheduled,
+            SUM({$genderCase} = 'Male' AND current_status = 'present') as male_present,
+            SUM({$genderCase} = 'Female' AND current_status = 'present') as female_present,
+            SUM({$genderCase} = 'Unknown' AND current_status = 'present') as unknown_present
         ")->first();
+
+        $genderBreakdown = [
+            'scheduled' => ['male' => (int) $totals->male_scheduled, 'female' => (int) $totals->female_scheduled, 'unknown' => (int) $totals->unknown_scheduled],
+            'present' => ['male' => (int) $totals->male_present, 'female' => (int) $totals->female_present, 'unknown' => (int) $totals->unknown_present],
+        ];
 
         $extraQuery = ExtraPresent::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'extra_presents.duty_session_id')
@@ -94,6 +107,7 @@ class AnalyticsController extends Controller
             'sessionOptions' => DutySession::whereBetween('date', [$from, $to])->orderByDesc('date')->get(['id', 'name', 'date']),
             'departmentOptions' => Department::orderBy('name')->get(['id', 'name']),
             'scheduled' => $scheduled,
+            'genderBreakdown' => $genderBreakdown,
             'present' => $present,
             'absent' => $absent,
             'pending' => $pending,

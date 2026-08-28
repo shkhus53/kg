@@ -50,6 +50,10 @@
                         </x-shell.stat-card>
                     </div>
 
+                    @if ($latestSessionGender)
+                        <x-shell.gender-breakdown :breakdown="$latestSessionGender" :rows="['scheduled' => 'Scheduled', 'present' => 'Present']" class="mt-3 rounded-xl bg-slate-50 p-3" />
+                    @endif
+
                     @php $pct = $latestSession->duty_assignments_count > 0 ? round(100 * $latestSession->present_count / $latestSession->duty_assignments_count) : 0; @endphp
                     <div class="mt-4">
                         <div class="flex items-center justify-between text-xs text-slate-500">

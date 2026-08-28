@@ -4,13 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\DutySession;
 use App\Services\AttendanceService;
+use App\Services\ReportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class DutySessionController extends Controller
 {
-    public function __construct(private readonly AttendanceService $attendance) {}
+    public function __construct(
+        private readonly AttendanceService $attendance,
+        private readonly ReportService $reports,
+    ) {}
 
     public function index(): View
     {
@@ -80,6 +84,7 @@ class DutySessionController extends Controller
             'pending' => $pending,
             'extra' => $extra,
             'rate' => $scheduled > 0 ? round(100 * $present / $scheduled, 1) : 0,
+            'genderBreakdown' => $this->reports->sessionGenderSummary($dutySession),
         ]);
     }
 

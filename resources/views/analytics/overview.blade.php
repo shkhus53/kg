@@ -63,6 +63,11 @@
                 <p class="mt-1 text-xs text-slate-400">{{ __('Present ÷ Total Scheduled — Extra Present excluded') }}</p>
             </x-shell.card>
 
+            <x-shell.card>
+                <h3 class="mb-2 text-sm font-semibold text-slate-700">{{ __('Gender Breakdown') }}</h3>
+                <x-shell.gender-breakdown :breakdown="$genderBreakdown" :rows="['scheduled' => 'Scheduled', 'present' => 'Present']" />
+            </x-shell.card>
+
             @if ($trend->isNotEmpty())
                 <x-shell.card>
                     <h3 class="mb-3 text-sm font-semibold text-slate-700">{{ __('Attendance Trend') }}</h3>

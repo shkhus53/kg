@@ -26,6 +26,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/sessions/{dutySession}/import', [DutyListImportController::class, 'store'])->name('sessions.imports.store');
         Route::post('/sessions/{dutySession}/import/{token}/confirm', [DutyListImportController::class, 'confirm'])->name('sessions.imports.confirm');
 
+        Route::get('/attendance', [AttendanceController::class, 'liveRedirect'])->name('attendance.shell.live-redirect');
         Route::get('/sessions/{dutySession}/attendance', [AttendanceController::class, 'live'])->name('attendance.shell.live');
         Route::post('/sessions/{dutySession}/attendance/present', [AttendanceController::class, 'present'])->name('attendance.present');
         Route::post('/sessions/{dutySession}/attendance/absent', [AttendanceController::class, 'absent'])->name('attendance.absent');

@@ -27,6 +27,14 @@
                     <p class="text-[10px] text-white/60">{{ __('Extra') }}</p>
                 </div>
             </div>
+
+            <div class="mt-3 flex items-center justify-between rounded-xl bg-white/10 px-3 py-2 text-[11px] text-white/70">
+                <span class="text-blue-200">{{ __('Male') }} {{ $genderBreakdown['scheduled']['male'] }}</span>
+                <span class="text-violet-200">{{ __('Female') }} {{ $genderBreakdown['scheduled']['female'] }}</span>
+                @if ($genderBreakdown['scheduled']['unknown'] > 0)
+                    <span>{{ __('Unknown') }} {{ $genderBreakdown['scheduled']['unknown'] }}</span>
+                @endif
+            </div>
         </x-shell.page-header>
     </x-slot>
 
