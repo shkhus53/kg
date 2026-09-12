@@ -4,7 +4,7 @@
         ['label' => 'Sessions', 'route' => 'sessions.index', 'active' => request()->routeIs('sessions.*') && !request()->routeIs('sessions.imports.*')],
     ];
 @endphp
-<nav class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white">
+<nav class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white lg:hidden">
     <div class="mx-auto flex max-w-md items-center justify-around px-2 py-2 sm:max-w-2xl lg:max-w-4xl">
         <a href="{{ route('dashboard') }}" class="flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 {{ request()->routeIs('dashboard') ? 'text-navy-900' : 'text-slate-400' }}">
             <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -21,18 +21,18 @@
         </a>
 
         @if (auth()->user()->canManageSessions())
-            <a href="{{ route('attendance.shell.live-redirect') }}" class="flex flex-col items-center" title="{{ __('Live Attendance') }}">
+            <a href="{{ route('attendance.shell.live-redirect') }}" class="flex flex-col items-center" aria-label="{{ __('Live Attendance') }}">
                 <span class="-mt-7 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30">
-                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <circle cx="11" cy="11" r="7" stroke-linecap="round" />
                         <path stroke-linecap="round" d="m20 20-3.5-3.5" />
                     </svg>
                 </span>
             </a>
         @else
-            <div class="flex flex-col items-center">
-                <span class="-mt-7 flex h-12 w-12 items-center justify-center rounded-full bg-slate-300 text-white" title="{{ __('Live Attendance (not available for your role)') }}">
-                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <div class="flex flex-col items-center" role="img" aria-label="{{ __('Live Attendance — not available for your role') }}">
+                <span class="-mt-7 flex h-12 w-12 items-center justify-center rounded-full bg-slate-300 text-white">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <circle cx="11" cy="11" r="7" stroke-linecap="round" />
                         <path stroke-linecap="round" d="m20 20-3.5-3.5" />
                     </svg>
@@ -68,6 +68,16 @@
                     <svg class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-8 8a6 6 0 0 0-6 6h20a6 6 0 0 0-6-6H8Z" /></svg>
                     {{ __('Khidmatguzars') }}
                 </a>
+                @can('view_audit_log')
+                    <a href="{{ route('audit.index') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
+                        <svg class="h-4 w-4 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l4.414 4.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z" /></svg>
+                        {{ __('Audit Log') }}
+                    </a>
+                    <a href="{{ route('analytics.operators') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
+                        <svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-8 8a6 6 0 0 0-6 6h20a6 6 0 0 0-6-6H8Z" /></svg>
+                        {{ __('Operator Analytics') }}
+                    </a>
+                @endcan
             </div>
         </div>
     </div>

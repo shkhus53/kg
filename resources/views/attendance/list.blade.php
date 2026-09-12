@@ -31,7 +31,7 @@
 
         @if ($tab === 'extra')
             @if ($extraPresents->isEmpty())
-                <x-shell.card class="text-center text-slate-400">{{ __('No Extra Present records yet.') }}</x-shell.card>
+                <x-shell.empty-state title="{{ __('No Extra Present records yet') }}" />
             @else
                 @foreach ($extraPresents as $extra)
                     <div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -41,7 +41,7 @@
                             </span>
                             <div class="min-w-0">
                                 <p class="truncate text-sm font-medium text-slate-900">{{ $extra->full_name_snapshot }}</p>
-                                <p class="truncate text-xs text-slate-400">{{ __('ITS') }}: {{ $extra->its_id_snapshot }} &middot; {{ $extra->department_name_snapshot }} &middot; {{ $extra->marked_at->format('H:i') }}</p>
+                                <p class="truncate text-xs text-slate-400">{{ __('ITS') }}: {{ $extra->its_id_snapshot }} &middot; {{ $extra->department_name_snapshot }} &middot; {{ $extra->marked_at->toIst()->format('H:i') }}</p>
                             </div>
                         </div>
                         <x-shell.badge tone="purple">{{ __('Extra') }}</x-shell.badge>
@@ -49,7 +49,7 @@
                 @endforeach
             @endif
         @elseif ($assignments->isEmpty())
-            <x-shell.card class="text-center text-slate-400">{{ __('No duty assignments found.') }}</x-shell.card>
+            <x-shell.empty-state title="{{ __('No duty assignments found') }}" />
         @else
             @foreach ($assignments as $assignment)
                 <div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -65,7 +65,7 @@
                     <div class="text-right">
                         <x-shell.badge :tone="$assignment->current_status === 'present' ? 'green' : ($assignment->current_status === 'absent' ? 'red' : 'orange')">{{ $assignment->current_status }}</x-shell.badge>
                         @if ($assignment->attendance_marked_at)
-                            <p class="mt-1 text-[10px] text-slate-400">{{ $assignment->attendance_marked_at->format('H:i') }}</p>
+                            <p class="mt-1 text-[10px] text-slate-400">{{ $assignment->attendance_marked_at->toIst()->format('H:i') }}</p>
                         @endif
                     </div>
                 </div>

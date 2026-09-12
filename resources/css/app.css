@@ -5,3 +5,146 @@
 [x-cloak] {
     display: none !important;
 }
+
+/*
+ * Phase 10 — design tokens + motion primitives.
+ *
+ * Restrained by design: durations are short (150-320ms), easing is a
+ * single shared curve, and every animation is disabled under
+ * prefers-reduced-motion. Nothing here is decorative-only — each keyframe
+ * exists because a specific screen uses it to convey state (loading,
+ * arriving, changing value, needing attention).
+ */
+:root {
+    --kg-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --kg-glass-bg: rgb(255 255 255 / 0.72);
+    --kg-glass-border: rgb(255 255 255 / 0.5);
+    --kg-glass-shadow: 0 8px 32px rgb(15 30 61 / 0.10);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+    :root {
+        --kg-glass-bg: rgb(255 255 255 / 0.96);
+    }
+}
+
+/* ---- Surfaces ---- */
+
+.kg-glass {
+    background: var(--kg-glass-bg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--kg-glass-border);
+    box-shadow: var(--kg-glass-shadow);
+}
+
+.kg-card-hover {
+    transition: transform 180ms var(--kg-ease), box-shadow 180ms var(--kg-ease), border-color 180ms var(--kg-ease);
+}
+.kg-card-hover:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgb(15 23 42 / 0.08);
+}
+.kg-card-hover:active {
+    transform: translateY(0);
+}
+
+/* ---- Entrance ---- */
+
+@keyframes kg-enter {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.kg-enter {
+    animation: kg-enter 320ms var(--kg-ease) both;
+}
+.kg-enter-1 { animation-delay: 40ms; }
+.kg-enter-2 { animation-delay: 80ms; }
+.kg-enter-3 { animation-delay: 120ms; }
+.kg-enter-4 { animation-delay: 160ms; }
+.kg-enter-5 { animation-delay: 200ms; }
+
+/* ---- Progress / counters ---- */
+
+.kg-progress-fill {
+    transition: width 600ms var(--kg-ease);
+}
+
+@keyframes kg-count-pop {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+}
+.kg-count-pop {
+    animation: kg-count-pop 260ms var(--kg-ease);
+    display: inline-block;
+}
+
+/* ---- Button feedback ---- */
+
+.kg-tap {
+    transition: transform 100ms var(--kg-ease), box-shadow 150ms var(--kg-ease), background-color 150ms var(--kg-ease);
+}
+.kg-tap:active {
+    transform: scale(0.97);
+}
+
+/* ---- Success flash (attendance marked) ---- */
+
+@keyframes kg-flash-success {
+    0% { background-color: rgb(16 185 129 / 0.18); }
+    100% { background-color: transparent; }
+}
+.kg-flash-success {
+    animation: kg-flash-success 900ms var(--kg-ease);
+}
+
+/* ---- Skeleton loading ---- */
+
+.kg-skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: theme('colors.slate.100');
+}
+.kg-skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.6), transparent);
+    animation: kg-shimmer 1.6s infinite;
+}
+@keyframes kg-shimmer {
+    100% { transform: translateX(100%); }
+}
+
+/* ---- Pulsing dot (syncing / live) ---- */
+
+@keyframes kg-pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+.kg-pulse-dot {
+    animation: kg-pulse-dot 1.4s ease-in-out infinite;
+}
+
+/* ---- Dropdown / sheet transitions (pairs with Alpine x-transition) ---- */
+
+.kg-menu-enter {
+    transition: opacity 140ms var(--kg-ease), transform 140ms var(--kg-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .kg-enter,
+    .kg-count-pop,
+    .kg-flash-success,
+    .kg-pulse-dot,
+    .kg-skeleton::after,
+    .kg-card-hover,
+    .kg-tap,
+    .kg-progress-fill {
+        animation: none !important;
+        transition: none !important;
+    }
+    .kg-enter { opacity: 1; transform: none; }
+}

@@ -8,6 +8,7 @@ use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -123,15 +124,33 @@ class ArraySheet implements FromArray, ShouldAutoSize, WithEvents, WithTitle
                 // "0" — a real accuracy problem for a report where 0 is a
                 // meaningful, verified count (e.g. "Unknown: 0"). Re-write
                 // every cell we know was meant to be a numeric 0.
+                //
+                // CSV/Excel formula-injection guard, centralized here since
+                // every export in the app builds its sheets through this one
+                // class: any string cell whose content is exported verbatim
+                // from user-controlled data (a Khidmatguzar's name, a
+                // remark, a department name, etc.) could otherwise begin
+                // with =, +, -, or @ and be evaluated as a live formula by
+                // Excel/Sheets when the file is opened. Re-writing such
+                // cells with an explicit STRING data type (the same
+                // technique already used above for the zero-value fix)
+                // makes PhpSpreadsheet store and render them as literal
+                // text — never parsed as a formula — with the value itself
+                // left completely unchanged. Ordinary text/numbers/dates are
+                // untouched; only the four dangerous leading characters
+                // trigger this.
                 foreach ($this->rows as $i => $row) {
                     foreach (array_values($row) as $j => $value) {
+                        $coordinate = Coordinate::stringFromColumnIndex($j + 1).($headingRow + 1 + $i);
+
                         if ($value === 0 || $value === 0.0) {
-                            $col = Coordinate::stringFromColumnIndex($j + 1);
-                            $sheet->setCellValueExplicit(
-                                $col.($headingRow + 1 + $i),
-                                0,
-                                \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC
-                            );
+                            $sheet->setCellValueExplicit($coordinate, 0, DataType::TYPE_NUMERIC);
+
+                            continue;
+                        }
+
+                        if (self::isFormulaInjectionRisk($value)) {
+                            $sheet->setCellValueExplicit($coordinate, $value, DataType::TYPE_STRING);
                         }
                     }
                 }
@@ -189,5 +208,16 @@ class ArraySheet implements FromArray, ShouldAutoSize, WithEvents, WithTitle
                 $sheet->getPageMargins()->setTop(0.5)->setBottom(0.5)->setLeft(0.4)->setRight(0.4);
             },
         ];
+    }
+
+    /**
+     * True only for a non-empty string whose first character is one Excel/
+     * Sheets treats as a formula prefix. Numbers, booleans, null, and
+     * ordinary text (including a name that merely contains one of these
+     * characters elsewhere) are never affected.
+     */
+    private static function isFormulaInjectionRisk(mixed $value): bool
+    {
+        return is_string($value) && $value !== '' && in_array($value[0], ['=', '+', '-', '@'], true);
     }
 }

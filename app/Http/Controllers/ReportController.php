@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exports\DepartmentDetailReportExport;
 use App\Exports\DepartmentReportExport;
 use App\Exports\KhidmatguzarReportExport;
+use App\Exports\OperatorActivityReportExport;
 use App\Exports\SessionAttendanceExport;
 use App\Models\Department;
 use App\Models\DutySession;
@@ -15,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * All routes are read-only (GET only) and reachable by every authenticated
@@ -46,7 +48,7 @@ class ReportController extends Controller
         return $pdf->download($filename);
     }
 
-    public function sessionExcel(DutySession $dutySession): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    public function sessionExcel(DutySession $dutySession): BinaryFileResponse
     {
         $data = $this->reports->sessionReport($dutySession);
         $filename = 'session-attendance-'.$this->reports->safeFilenamePart($dutySession->name.'-'.$dutySession->date->format('Y-m-d')).'.xlsx';
@@ -58,7 +60,7 @@ class ReportController extends Controller
     {
         [$from, $to, $sessionId, $departmentId] = $this->resolveDepartmentScope($request);
 
-        $extra = ['sessions' => DutySession::whereBetween('date', [$from, $to])->orderByDesc('date')->get(['id', 'name', 'date'])];
+        $extra = ['sessions' => DutySession::whereDate('date', '>=', $from)->whereDate('date', '<=', $to)->orderByDesc('date')->get(['id', 'name', 'date'])];
         $extra['departments'] = Department::orderBy('name')->get(['id', 'name']);
         $extra['departmentId'] = $departmentId;
 
@@ -90,7 +92,7 @@ class ReportController extends Controller
         return $pdf->download($filename);
     }
 
-    public function departmentExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    public function departmentExcel(Request $request): BinaryFileResponse
     {
         [$from, $to, $sessionId, $departmentId] = $this->resolveDepartmentScope($request);
 
@@ -123,12 +125,51 @@ class ReportController extends Controller
         return $pdf->download($filename);
     }
 
-    public function khidmatguzarExcel(Khidmatguzar $khidmatguzar): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    public function khidmatguzarExcel(Khidmatguzar $khidmatguzar): BinaryFileResponse
     {
         $data = $this->reports->khidmatguzarReport($khidmatguzar);
         $filename = 'khidmatguzar-'.$this->reports->safeFilenamePart($khidmatguzar->its_id).'-attendance.xlsx';
 
         return Excel::download(new KhidmatguzarReportExport($data), $filename);
+    }
+
+    /**
+     * Operator Activity report (Phase 8): built from ReportService::
+     * operatorActivityReport(), the same query the on-screen Operator
+     * Analytics page uses, so this export can never disagree with it. Same
+     * sensitivity as Operator Analytics itself (staff-activity visibility)
+     * — gated by the view_audit_log permission, not the general reports
+     * auth-only access every other report has.
+     */
+    public function operatorActivityPdf(Request $request): Response
+    {
+        [$from, $to] = $this->resolveDateRange($request);
+        $data = $this->reports->operatorActivityReport($from, $to);
+        $pdf = Pdf::loadView('reports.pdf.operator-activity', $data)->setPaper('a4', 'landscape');
+
+        $filename = 'operator-activity-'.$this->reports->safeFilenamePart($from.'-to-'.$to).'.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    public function operatorActivityExcel(Request $request): BinaryFileResponse
+    {
+        [$from, $to] = $this->resolveDateRange($request);
+        $data = $this->reports->operatorActivityReport($from, $to);
+        $filename = 'operator-activity-'.$this->reports->safeFilenamePart($from.'-to-'.$to).'.xlsx';
+
+        return Excel::download(new OperatorActivityReportExport($data), $filename);
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function resolveDateRange(Request $request): array
+    {
+        return [
+            $request->query('from') ?: now()->toIst()->subDays(30)->format('Y-m-d'),
+            $request->query('to') ?: now()->toIst()->format('Y-m-d'),
+        ];
     }
 
     /**
@@ -148,8 +189,8 @@ class ReportController extends Controller
             Department::findOrFail($departmentId);
         }
 
-        $from = $request->query('from') ?: now()->subDays(30)->format('Y-m-d');
-        $to = $request->query('to') ?: now()->format('Y-m-d');
+        $from = $request->query('from') ?: now()->toIst()->subDays(30)->format('Y-m-d');
+        $to = $request->query('to') ?: now()->toIst()->format('Y-m-d');
 
         return [$from, $to, $sessionId, $departmentId];
     }

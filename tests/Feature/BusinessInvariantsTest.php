@@ -174,8 +174,8 @@ class BusinessInvariantsTest extends TestCase
         $this->assignment($session, $this->batch($session, $user), $this->khidmatguzar('scope'), $dept, ['assignment_fingerprint' => 'fp-scope']);
 
         $service = app(AttendanceService::class);
-        $first = $service->markExtraPresentKnown($session, $kg, $dept, $user);
-        $second = $service->markExtraPresentKnown($session, $kg, $dept, $user);
+        $first = $service->markExtraPresentKnown($session, $kg, $dept, 'Male', $user);
+        $second = $service->markExtraPresentKnown($session, $kg, $dept, 'Male', $user);
 
         $this->assertSame('marked', $first['result']);
         $this->assertSame('already_extra', $second['result']);
@@ -190,7 +190,7 @@ class BusinessInvariantsTest extends TestCase
         $dept = $this->department();
         $this->assignment($session, $this->batch($session, $user), $this->khidmatguzar('scope2'), $dept, ['assignment_fingerprint' => 'fp-scope2']);
 
-        $result = app(AttendanceService::class)->markExtraPresentNew($session, '99990001', 'Brand New Person', $dept, $user);
+        $result = app(AttendanceService::class)->markExtraPresentNew($session, '99990001', 'Brand New Person', 'Male', $dept, $user);
 
         $this->assertSame('marked', $result['result']);
         $this->assertSame(1, Khidmatguzar::where('its_id', '99990001')->count());

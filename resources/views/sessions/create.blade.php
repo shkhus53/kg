@@ -20,7 +20,7 @@
 
                 <div>
                     <x-input-label for="date" :value="__('Session Date')" />
-                    <x-text-input id="date" name="date" type="date" class="mt-1 block w-full" :value="old('date', now()->format('Y-m-d'))" required />
+                    <x-text-input id="date" name="date" type="date" class="mt-1 block w-full" :value="old('date', now()->toIst()->format('Y-m-d'))" required />
                     <x-input-error :messages="$errors->get('date')" class="mt-2" />
                 </div>
 

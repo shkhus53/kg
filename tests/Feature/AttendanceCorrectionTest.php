@@ -222,7 +222,7 @@ class AttendanceCorrectionTest extends TestCase
         $service = app(AttendanceService::class);
 
         $extraKg = Khidmatguzar::create(['its_id' => (string) random_int(10000000, 99999999), 'full_name' => 'Extra Person']);
-        $service->markExtraPresentKnown($session, $extraKg, $dept, $user);
+        $service->markExtraPresentKnown($session, $extraKg, $dept, 'Male', $user);
 
         $service->markAbsent($session, $assignment->id, $user);
         $service->markPresent($session, $assignment->id, $user);
@@ -290,7 +290,7 @@ class AttendanceCorrectionTest extends TestCase
             $lastAssignment = $a;
         }
         $extraKg = Khidmatguzar::create(['its_id' => (string) random_int(10000000, 99999999), 'full_name' => 'Extra']);
-        $result = app(AttendanceService::class)->markExtraPresentKnown($session, $extraKg, $lastAssignment->department, $user);
+        $result = app(AttendanceService::class)->markExtraPresentKnown($session, $extraKg, $lastAssignment->department, 'Male', $user);
         $this->assertSame('marked', $result['result']);
 
         $scheduled = DutyAssignment::where('duty_session_id', $session->id)->count();

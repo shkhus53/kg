@@ -52,7 +52,7 @@ class DepartmentReportExport implements WithMultipleSheets
                 ['Pending — Female', $g['pending']['female']],
                 ['Pending — Unknown', $g['pending']['unknown']],
                 ['', ''],
-                ['Generated At', now()->format('d M Y H:i')],
+                ['Generated At', now()->toIst()->format('d M Y H:i').' IST'],
             ],
             reportTitle: 'KG Attendance — Department Report',
             subtitle: $scopeLabel,

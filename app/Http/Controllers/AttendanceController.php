@@ -148,6 +148,7 @@ class AttendanceController extends Controller
         $validated = $request->validate([
             'its' => ['required', 'string', 'max:20'],
             'full_name' => ['nullable', 'string', 'max:255'],
+            'gender' => ['required', 'string', 'in:Male,Female'],
             'department_id' => ['required', 'integer', 'exists:departments,id'],
             'remark' => ['nullable', 'string', 'max:500'],
         ]);
@@ -156,14 +157,14 @@ class AttendanceController extends Controller
         $khidmatguzar = Khidmatguzar::where('its_id', $validated['its'])->first();
 
         if ($khidmatguzar) {
-            $outcome = $this->attendance->markExtraPresentKnown($dutySession, $khidmatguzar, $department, $request->user(), $validated['remark'] ?? null);
+            $outcome = $this->attendance->markExtraPresentKnown($dutySession, $khidmatguzar, $department, $validated['gender'], $request->user(), $validated['remark'] ?? null);
         } else {
             if (empty($validated['full_name'])) {
                 return redirect()->route('attendance.shell.live', [$dutySession, 'its' => $validated['its']])
                     ->with('flash_error', 'Full Name is required to create a new Khidmatguzar.');
             }
 
-            $outcome = $this->attendance->markExtraPresentNew($dutySession, $validated['its'], $validated['full_name'], $department, $request->user(), $validated['remark'] ?? null);
+            $outcome = $this->attendance->markExtraPresentNew($dutySession, $validated['its'], $validated['full_name'], $validated['gender'], $department, $request->user(), $validated['remark'] ?? null);
         }
 
         $status = match ($outcome['result']) {

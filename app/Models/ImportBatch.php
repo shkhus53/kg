@@ -10,7 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'duty_session_id', 'uploaded_by', 'original_filename', 'file_type', 'status',
     'total_rows', 'valid_rows', 'invalid_rows', 'exact_duplicate_rows', 'cross_batch_duplicate_rows',
-    'new_khidmatguzars', 'existing_khidmatguzars', 'new_departments', 'existing_departments',
+    'new_khidmatguzars', 'existing_khidmatguzars', 'updated_khidmatguzars', 'unchanged_khidmatguzars',
+    'new_departments', 'existing_departments',
     'error_summary',
 ])]
 class ImportBatch extends Model
@@ -35,5 +36,10 @@ class ImportBatch extends Model
     public function dutyAssignments(): HasMany
     {
         return $this->hasMany(DutyAssignment::class);
+    }
+
+    public function changeLogs(): HasMany
+    {
+        return $this->hasMany(KhidmatguzarChangeLog::class, 'import_batch_id');
     }
 }

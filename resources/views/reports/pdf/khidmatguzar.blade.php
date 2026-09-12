@@ -11,7 +11,7 @@
     <div class="meta">
         {{ $khidmatguzar->full_name }} <span class="sep">&middot;</span> ITS: {{ $khidmatguzar->its_id }}
         @if ($khidmatguzar->jamaat) <span class="sep">&middot;</span> {{ $khidmatguzar->jamaat }} @endif
-        <br>Generated {{ now()->format('d M Y H:i') }} {{ config('app.timezone') }}
+        <br>Generated {{ now()->toIst()->format('d M Y H:i') }} IST
     </div>
 </div>
 
@@ -72,10 +72,10 @@
     <tbody>
         @foreach ($extraHistory as $e)
         <tr>
-            <td>{{ $e->marked_at->format('d M Y') }}</td>
+            <td>{{ $e->marked_at->toIst()->format('d M Y') }}</td>
             <td>{{ $e->dutySession->name }}</td>
             <td>{{ $e->department_name_snapshot }}</td>
-            <td>{{ $e->marked_at->format('H:i') }}</td>
+            <td>{{ $e->marked_at->toIst()->format('H:i') }}</td>
             <td>{{ $e->remark }}</td>
         </tr>
         @endforeach

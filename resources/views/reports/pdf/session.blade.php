@@ -11,7 +11,7 @@
     <div class="meta">
         {{ $dutySession->name }} <span class="sep">&middot;</span> {{ $dutySession->date->format('d M Y') }} <span class="sep">&middot;</span> {{ strtoupper($dutySession->status) }}
         @unless($dutySession->isClosed()) (not final) @endunless
-        <br>Generated {{ now()->format('d M Y H:i') }} {{ config('app.timezone') }}
+        <br>Generated {{ now()->toIst()->format('d M Y H:i') }} IST
     </div>
 </div>
 
@@ -87,7 +87,7 @@
             <td>{{ $a->seat }}</td>
             <td>{{ $a->day_alias ?: $a->day }}</td>
             <td><span class="badge badge-{{ $a->current_status }}">{{ $a->current_status }}</span></td>
-            <td>{{ $a->attendance_marked_at?->format('d M H:i') }}</td>
+            <td>{{ $a->attendance_marked_at?->toIst()->format('d M H:i') }}</td>
         </tr>
         @endforeach
     </tbody>
@@ -105,7 +105,7 @@
             <td>{{ $e->full_name_snapshot }}</td>
             <td>{{ $e->its_id_snapshot }}</td>
             <td>{{ $e->department_name_snapshot }}</td>
-            <td>{{ $e->marked_at->format('d M Y H:i') }}</td>
+            <td>{{ $e->marked_at->toIst()->format('d M Y H:i') }}</td>
             <td>{{ $e->markedBy?->name }}</td>
             <td>{{ $e->remark }}</td>
         </tr>

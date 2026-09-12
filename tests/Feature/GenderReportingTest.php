@@ -162,7 +162,7 @@ class GenderReportingTest extends TestCase
         $assignment = $this->makeAssignment($session, $dept, $batch, 'M', 'present');
 
         $extraKg = Khidmatguzar::create(['its_id' => (string) random_int(10000000, 99999999), 'full_name' => 'Extra Gender', 'gender' => 'F']);
-        app(AttendanceService::class)->markExtraPresentKnown($session, $extraKg, $dept, $user);
+        app(AttendanceService::class)->markExtraPresentKnown($session, $extraKg, $dept, 'Female', $user);
 
         $report = app(ReportService::class)->sessionReport($session);
 

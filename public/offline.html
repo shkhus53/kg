@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline — KG Attendance</title>
+<style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Figtree, sans-serif; background: #f8fafc; color: #0f172a; }
+    header { background: #0f1e3d; color: #fff; padding: 20px 16px 24px; border-radius: 0 0 24px 24px; }
+    header h1 { margin: 0 0 4px; font-size: 18px; }
+    header p { margin: 0; font-size: 13px; color: rgba(255,255,255,.7); }
+    main { max-width: 480px; margin: 0 auto; padding: 16px; padding-bottom: 96px; }
+    .card { background: #fff; border: 1px solid #f1f5f9; border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    button { width: 100%; padding: 12px; border: none; border-radius: 12px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 8px; }
+    .btn-outline { background: #fff; color: #334155; border: 1px solid #cbd5e1; }
+    .muted { color: #94a3b8; font-size: 13px; }
+    .warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 16px; padding: 16px; margin-bottom: 12px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+    <h1>Offline</h1>
+    <p id="status-line">No network connection right now.</p>
+</header>
+<main>
+    <div class="warn">
+        <strong>Attendance cannot be marked from this screen.</strong>
+        <p style="margin:8px 0 0">
+            This page cannot safely confirm who is signed in on this device, so it will never create an
+            attendance record. Reconnect and reopen the app while signed in to mark or correct attendance —
+            anything you already queued there is still saved and will sync automatically.
+        </p>
+    </div>
+
+    <div class="card">
+        <p class="muted" id="session-info">Checking this device's saved data…</p>
+        <p class="muted" id="queue-info"></p>
+    </div>
+
+    <div class="card">
+        <button class="btn-outline" id="reload-btn">Reload app now</button>
+    </div>
+</main>
+<script>
+// Read-only status view. This file deliberately has NO ability to create,
+// modify, or queue an attendance event — see the warning above. It exists
+// only so a device that's fully offline on restart shows something useful
+// instead of the bare browser error, per the app's service worker
+// navigation fallback (public/sw.js).
+const DB_NAME = 'kg-attendance', DB_VERSION = 1;
+function openDb() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+        req.onupgradeneeded = () => {}; // the real schema is created by the main app; nothing to do if it hasn't run yet
+    });
+}
+function all(store) { return new Promise((res, rej) => { const r = store.getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+
+async function main() {
+    let db;
+    try { db = await openDb(); } catch (e) { document.getElementById('session-info').textContent = 'No saved session on this device yet — connect once while signed in first.'; return; }
+    if (!db.objectStoreNames.contains('provisioned_session')) {
+        document.getElementById('session-info').textContent = 'No saved session on this device yet.';
+        return;
+    }
+
+    const sessions = await all(db.transaction('provisioned_session').objectStore('provisioned_session'));
+    const session = sessions[0];
+    document.getElementById('session-info').textContent = session ? (session.name + ' — ' + session.date) : 'No saved session on this device.';
+
+    const queue = await all(db.transaction('event_queue').objectStore('event_queue'));
+    const pending = queue.filter((e) => e.status === 'queued' || e.status === 'syncing').length;
+    document.getElementById('queue-info').textContent = pending + ' attendance action(s) saved on this device, waiting to sync once you're back online and signed in.';
+
+    document.getElementById('reload-btn').addEventListener('click', () => location.reload());
+    window.addEventListener('online', () => { document.getElementById('status-line').textContent = 'Back online — reload to return to the full app.'; });
+}
+
+main();
+</script>
+</body>
+</html>

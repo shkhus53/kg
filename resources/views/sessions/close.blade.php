@@ -15,7 +15,7 @@
                 </span>
                 <p class="mt-3 text-lg font-semibold text-slate-900">{{ __('Session Closed') }}</p>
                 <p class="mt-1 text-sm text-slate-400">
-                    {{ $dutySession->closed_at?->format('d M Y H:i') }}
+                    {{ $dutySession->closed_at?->toIst()->format('d M Y H:i') }}
                     @if ($dutySession->closedBy) &middot; {{ $dutySession->closedBy->name }} @endif
                 </p>
             </x-shell.card>

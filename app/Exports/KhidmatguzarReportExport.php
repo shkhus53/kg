@@ -27,7 +27,7 @@ class KhidmatguzarReportExport implements WithMultipleSheets
                 ['Pending', $r['pending']],
                 ['Extra Present', $r['extraCount']],
                 ['Attendance Rate', $r['rate'] !== null ? $r['rate'].'%' : 'N/A'],
-                ['Generated At', now()->format('d M Y H:i')],
+                ['Generated At', now()->toIst()->format('d M Y H:i').' IST'],
             ],
             reportTitle: 'KG Attendance — Khidmatguzar Report',
             subtitle: $kg->full_name.' · ITS '.$kg->its_id,

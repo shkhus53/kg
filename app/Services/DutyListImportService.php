@@ -8,7 +8,9 @@ use App\Models\DutyAssignment;
 use App\Models\DutySession;
 use App\Models\ImportBatch;
 use App\Models\Khidmatguzar;
+use App\Models\KhidmatguzarChangeLog;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
@@ -184,11 +186,50 @@ class DutyListImportService
             $withinFileValid[] = $row;
         }
 
-        $existingIts = Khidmatguzar::whereIn('its_id', array_column(array_column($withinFileValid, 'data'), 'its_id'))
-            ->pluck('its_id')->flip();
+        $existingKhidmatguzars = Khidmatguzar::whereIn('its_id', array_column(array_column($withinFileValid, 'data'), 'its_id'))
+            ->get()->keyBy('its_id');
 
-        $newIts = collect($withinFileValid)->pluck('data.its_id')->unique()
-            ->reject(fn ($its) => $existingIts->has($its));
+        // Dry-run classification: NEW / UPDATED / UNCHANGED, per Khidmatguzar
+        // (not per row — several rows can share one ITS across departments).
+        // Uses the exact same computeChanges() the commit path applies, so
+        // the preview can never disagree with what actually happens.
+        $newIts = collect();
+        $updatedIts = collect();
+        $unchangedIts = collect();
+        $changedKhidmatguzars = [];
+        $seenIts = [];
+
+        foreach ($withinFileValid as $row) {
+            $data = $row['data'];
+            $its = $data['its_id'];
+
+            if (isset($seenIts[$its])) {
+                continue; // classify each person once, using their first occurrence in the file
+            }
+            $seenIts[$its] = true;
+
+            $existing = $existingKhidmatguzars->get($its);
+
+            if (! $existing) {
+                $newIts->push($its);
+
+                continue;
+            }
+
+            $changes = $this->computeChanges($existing, $this->incomingKhidmatguzarFields($data));
+
+            if (empty($changes)) {
+                $unchangedIts->push($its);
+            } else {
+                $updatedIts->push($its);
+                $changedKhidmatguzars[] = [
+                    'row_number' => $row['row_number'],
+                    'its_id' => $its,
+                    'full_name' => $existing->full_name,
+                    'changes' => $changes,
+                ];
+            }
+        }
 
         $newDeptKeys = collect($withinFileValid)
             ->pluck('data.venue_name')
@@ -210,7 +251,10 @@ class DutyListImportService
             'cross_batch_duplicate_rows' => $crossBatchDuplicates,
             'unique_its_count' => collect($withinFileValid)->pluck('data.its_id')->unique()->count(),
             'new_khidmatguzars' => $newIts->count(),
-            'existing_khidmatguzars' => collect($withinFileValid)->pluck('data.its_id')->unique()->count() - $newIts->count(),
+            'existing_khidmatguzars' => $updatedIts->count() + $unchangedIts->count(),
+            'updated_khidmatguzars' => $updatedIts->count(),
+            'unchanged_khidmatguzars' => $unchangedIts->count(),
+            'changed_khidmatguzars' => $changedKhidmatguzars,
             'new_departments' => $newDeptKeys->count(),
             'existing_departments' => $existingDeptKeysUsed->count(),
             'valid' => $withinFileValid,
@@ -247,6 +291,8 @@ class DutyListImportService
                 'cross_batch_duplicate_rows' => count($previewSummary['cross_batch_duplicate_rows']),
                 'new_khidmatguzars' => $previewSummary['new_khidmatguzars'],
                 'existing_khidmatguzars' => $previewSummary['existing_khidmatguzars'],
+                'updated_khidmatguzars' => $previewSummary['updated_khidmatguzars'] ?? 0,
+                'unchanged_khidmatguzars' => $previewSummary['unchanged_khidmatguzars'] ?? 0,
                 'new_departments' => $previewSummary['new_departments'],
                 'existing_departments' => $previewSummary['existing_departments'],
                 'error_summary' => [
@@ -258,68 +304,181 @@ class DutyListImportService
 
             $departmentCache = [];
             $khidmatguzarCache = [];
+            $skippedConcurrentDuplicates = 0;
 
             foreach ($validRows as $row) {
                 $data = $row['data'];
 
                 $deptKey = Department::normalize($data['venue_name']);
                 if (! isset($departmentCache[$deptKey])) {
-                    $departmentCache[$deptKey] = Department::firstOrCreate(
-                        ['normalized_key' => $deptKey],
-                        ['name' => $data['venue_name']],
-                    );
+                    $departmentCache[$deptKey] = $this->firstOrCreateDepartment($deptKey, $data['venue_name']);
                 }
                 $department = $departmentCache[$deptKey];
 
                 if (! isset($khidmatguzarCache[$data['its_id']])) {
-                    $khidmatguzarCache[$data['its_id']] = Khidmatguzar::updateOrCreate(
-                        ['its_id' => $data['its_id']],
-                        [
-                            'full_name' => $data['full_name'],
-                            'gender' => $this->blank($data['gender']),
-                            'idara' => $this->blank($data['idara']),
-                            'jamaat' => $this->blank($data['jamaat']),
-                            'jamiaat' => $this->blank($data['jamiaat']),
-                        ],
-                    );
+                    $khidmatguzarCache[$data['its_id']] = $this->updateOrCreateKhidmatguzar($data, $batch);
                 }
                 $khidmatguzar = $khidmatguzarCache[$data['its_id']];
 
-                DutyAssignment::create([
-                    'duty_session_id' => $dutySession->id,
-                    'import_batch_id' => $batch->id,
-                    'khidmatguzar_id' => $khidmatguzar->id,
-                    'department_id' => $department->id,
-                    'source_row_number' => $row['row_number'],
-                    'assignment_fingerprint' => $this->fingerprint($data),
-                    'block_name' => $this->blank($data['block_name']),
-                    'day' => $this->blank($data['day']),
-                    'day_alias' => $this->blank($data['day_alias']),
-                    'seat' => $this->blank($data['seat']),
-                    'category' => $this->blank($data['category']),
-                    'venue_name_raw' => $data['venue_name'],
-                    'current_status' => 'pending',
-                    'full_name_snapshot' => $data['full_name'],
-                    'gender_snapshot' => $this->blank($data['gender']),
-                    'age_snapshot' => $this->blank($data['age']),
-                    'idara_snapshot' => $this->blank($data['idara']),
-                    'jamaat_snapshot' => $this->blank($data['jamaat']),
-                    'jamiaat_snapshot' => $this->blank($data['jamiaat']),
-                    'h_year' => $this->blank($data['h_year']),
-                    'miqaat' => $this->blank($data['miqaat']),
-                    'status_raw' => $this->blank($data['status']),
-                    'allocated_user_name' => $this->blank($data['allocated_user_name']),
-                    'allocated_date' => $this->blank($data['allocated_date']),
-                    'deallocated_user_name' => $this->blank($data['deallocated_user_name']),
-                    'deallocated_date' => $this->blank($data['deallocated_date']),
-                    'scanned' => $this->blank($data['scanned']),
-                    'acc_child_below_5yrs' => $this->blank($data['acc_child_below_5yrs']),
-                    'multiple_acc_child_above_4yrs' => $this->blank($data['multiple_acc_child_above_4yrs']),
+                // Rule 9 (scheduled vs Extra Present are mutually exclusive):
+                // lock this Khidmatguzar's row before creating an assignment
+                // for them. AttendanceService::markExtraPresentKnown/New take
+                // the same lock before checking/writing, so the two paths
+                // properly serialize instead of racing.
+                Khidmatguzar::whereKey($khidmatguzar->id)->lockForUpdate()->first();
+
+                try {
+                    DutyAssignment::create([
+                        'duty_session_id' => $dutySession->id,
+                        'import_batch_id' => $batch->id,
+                        'khidmatguzar_id' => $khidmatguzar->id,
+                        'department_id' => $department->id,
+                        'source_row_number' => $row['row_number'],
+                        'assignment_fingerprint' => $this->fingerprint($data),
+                        'block_name' => $this->blank($data['block_name']),
+                        'day' => $this->blank($data['day']),
+                        'day_alias' => $this->blank($data['day_alias']),
+                        'seat' => $this->blank($data['seat']),
+                        'category' => $this->blank($data['category']),
+                        'venue_name_raw' => $data['venue_name'],
+                        'current_status' => 'pending',
+                        'full_name_snapshot' => $data['full_name'],
+                        'gender_snapshot' => $this->blank($data['gender']),
+                        'age_snapshot' => $this->blank($data['age']),
+                        'idara_snapshot' => $this->blank($data['idara']),
+                        'jamaat_snapshot' => $this->blank($data['jamaat']),
+                        'jamiaat_snapshot' => $this->blank($data['jamiaat']),
+                        'h_year' => $this->blank($data['h_year']),
+                        'miqaat' => $this->blank($data['miqaat']),
+                        'status_raw' => $this->blank($data['status']),
+                        'allocated_user_name' => $this->blank($data['allocated_user_name']),
+                        'allocated_date' => $this->blank($data['allocated_date']),
+                        'deallocated_user_name' => $this->blank($data['deallocated_user_name']),
+                        'deallocated_date' => $this->blank($data['deallocated_date']),
+                        'scanned' => $this->blank($data['scanned']),
+                        'acc_child_below_5yrs' => $this->blank($data['acc_child_below_5yrs']),
+                        'multiple_acc_child_above_4yrs' => $this->blank($data['multiple_acc_child_above_4yrs']),
+                    ]);
+                } catch (QueryException $e) {
+                    if (! $this->isDuplicateKeyError($e)) {
+                        throw $e;
+                    }
+                    // Another concurrent import committed the identical
+                    // fingerprint between preview and commit — the unique
+                    // constraint is the final race guard, skip this row
+                    // rather than failing the whole batch.
+                    $skippedConcurrentDuplicates++;
+                }
+            }
+
+            if ($skippedConcurrentDuplicates > 0) {
+                $batch->update([
+                    'error_summary' => array_merge($batch->error_summary ?? [], [
+                        'concurrent_duplicate_rows' => $skippedConcurrentDuplicates,
+                    ]),
                 ]);
             }
 
             return $batch;
         });
+    }
+
+    private function firstOrCreateDepartment(string $deptKey, string $venueName): Department
+    {
+        try {
+            return Department::firstOrCreate(['normalized_key' => $deptKey], ['name' => $venueName]);
+        } catch (QueryException $e) {
+            if (! $this->isDuplicateKeyError($e)) {
+                throw $e;
+            }
+
+            return Department::where('normalized_key', $deptKey)->firstOrFail();
+        }
+    }
+
+    /**
+     * Rule 3: the latest non-blank Excel value replaces the master value;
+     * a blank cell never overwrites an existing value. Every field that
+     * actually changes is logged to khidmatguzar_change_log for audit.
+     */
+    private function updateOrCreateKhidmatguzar(array $data, ImportBatch $batch): Khidmatguzar
+    {
+        $khidmatguzar = Khidmatguzar::firstOrNew(['its_id' => $data['its_id']]);
+        $incoming = $this->incomingKhidmatguzarFields($data);
+
+        if (! $khidmatguzar->exists) {
+            $khidmatguzar->fill($incoming);
+            $khidmatguzar->save();
+
+            return $khidmatguzar;
+        }
+
+        $changes = $this->computeChanges($khidmatguzar, $incoming);
+
+        foreach ($changes as $field => $change) {
+            KhidmatguzarChangeLog::create([
+                'khidmatguzar_id' => $khidmatguzar->id,
+                'import_batch_id' => $batch->id,
+                'field' => $field,
+                'old_value' => $change['old'],
+                'new_value' => $change['new'],
+                'changed_at' => now(),
+            ]);
+            $khidmatguzar->{$field} = $change['new'];
+        }
+
+        if (! empty($changes)) {
+            $khidmatguzar->save();
+        }
+
+        return $khidmatguzar;
+    }
+
+    /**
+     * @return array{full_name:?string,gender:?string,idara:?string,jamaat:?string,jamiaat:?string}
+     */
+    private function incomingKhidmatguzarFields(array $data): array
+    {
+        return [
+            'full_name' => $this->blank($data['full_name']),
+            'gender' => $this->blank($data['gender']),
+            'idara' => $this->blank($data['idara']),
+            'jamaat' => $this->blank($data['jamaat']),
+            'jamiaat' => $this->blank($data['jamiaat']),
+        ];
+    }
+
+    /**
+     * Rule 3: a blank incoming value never overwrites an existing one. Used
+     * identically by buildPreview() (dry-run, for the diff shown before
+     * confirming) and commit() (actually applied) — so the preview can
+     * never disagree with what commit() does.
+     *
+     * @param  array<string,?string>  $incoming
+     * @return array<string,array{old:?string,new:string}>
+     */
+    private function computeChanges(Khidmatguzar $existing, array $incoming): array
+    {
+        $changes = [];
+
+        foreach ($incoming as $field => $newValue) {
+            if ($newValue === null) {
+                continue; // blank cell — preserve the existing value
+            }
+
+            $oldValue = $existing->{$field};
+
+            if ($oldValue !== $newValue) {
+                $changes[$field] = ['old' => $oldValue, 'new' => $newValue];
+            }
+        }
+
+        return $changes;
+    }
+
+    private function isDuplicateKeyError(QueryException $e): bool
+    {
+        return $e->getCode() === '23000';
     }
 
     public function fingerprint(array $data): string

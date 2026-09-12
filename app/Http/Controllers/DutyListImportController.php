@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\DutySession;
+use App\Models\ImportBatch;
 use App\Services\DutyListImportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -96,6 +97,29 @@ class DutyListImportController extends Controller
         return redirect()
             ->route('sessions.show', $dutySession)
             ->with('status', "Import complete: {$batch->valid_rows} duty assignment(s) created from \"{$batch->original_filename}\".");
+    }
+
+    /**
+     * Import History / Diff (Phase 5): every master-data field this batch
+     * actually changed, grouped per Khidmatguzar. Read-only — never
+     * rewrites khidmatguzar_change_log, which is an immutable audit trail.
+     */
+    public function diff(DutySession $dutySession, ImportBatch $importBatch): View
+    {
+        abort_unless($importBatch->duty_session_id === $dutySession->id, 404);
+
+        $changes = $importBatch->changeLogs()
+            ->with('khidmatguzar:id,its_id,full_name')
+            ->orderBy('khidmatguzar_id')
+            ->orderBy('field')
+            ->get()
+            ->groupBy('khidmatguzar_id');
+
+        return view('imports.diff', [
+            'dutySession' => $dutySession,
+            'importBatch' => $importBatch,
+            'changes' => $changes,
+        ]);
     }
 
     private function isLockedForImport(DutySession $dutySession): bool

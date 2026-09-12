@@ -14,7 +14,7 @@
         @else
             {{ \Carbon\Carbon::parse($from)->format('d M Y') }} &ndash; {{ \Carbon\Carbon::parse($to)->format('d M Y') }}
         @endif
-        <br>Generated {{ now()->format('d M Y H:i') }} {{ config('app.timezone') }}
+        <br>Generated {{ now()->toIst()->format('d M Y H:i') }} IST
     </div>
 </div>
 

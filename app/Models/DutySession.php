@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'date', 'h_year', 'miqaat', 'remarks', 'status', 'closed_at', 'closed_by'])]
+#[Fillable(['name', 'date', 'h_year', 'miqaat', 'remarks', 'status', 'closed_at', 'closed_by', 'is_reopened_for_correction', 'reopened_at', 'reopened_by'])]
 class DutySession extends Model
 {
     use HasFactory;
@@ -18,6 +18,8 @@ class DutySession extends Model
         return [
             'date' => 'date',
             'closed_at' => 'datetime',
+            'reopened_at' => 'datetime',
+            'is_reopened_for_correction' => 'boolean',
         ];
     }
 
@@ -41,6 +43,16 @@ class DutySession extends Model
         return $this->belongsTo(User::class, 'closed_by');
     }
 
+    public function reopenedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reopened_by');
+    }
+
+    public function reopenEvents(): HasMany
+    {
+        return $this->hasMany(SessionReopenEvent::class);
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';
@@ -57,6 +69,10 @@ class DutySession extends Model
      */
     public function statusTone(): string
     {
+        if ($this->is_reopened_for_correction) {
+            return 'orange';
+        }
+
         return match ($this->status) {
             'active' => 'green',
             'closed' => 'red',

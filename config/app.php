@@ -69,6 +69,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Operational Timezone (KG Attendance)
+    |--------------------------------------------------------------------------
+    |
+    | Deliberately a SEPARATE setting from 'timezone' above, not a rename or
+    | replacement of it. 'timezone' above drives now()/today()/created_at
+    | etc. — everything actually WRITTEN to the database — and stays UTC.
+    | Every timestamp already in the database (attendance_events.performed_at,
+    | session_reopen_events.reopened_at, synced_events.last_attempted_at, and
+    | every created_at/updated_at) was written under that UTC clock. Flipping
+    | 'timezone' itself to Asia/Kolkata would not touch a single stored byte,
+    | but it WOULD change how every one of those already-stored values is
+    | interpreted on the very next read — silently shifting every historical
+    | timestamp's apparent time by 5:30 and misrepresenting history, which is
+    | exactly what must never happen to an audit trail.
+    |
+    | 'operational_timezone' is the one canonical zone for the other half of
+    | the problem: interpreting what "today" or "this date" means from an
+    | operator's perspective (Audit Log date-range filtering) and displaying
+    | any stored UTC timestamp to a human in the zone they actually work in.
+    | Storage never moves; only the boundary-conversion and display layers
+    | consult this value, via the Carbon::toIst() macro registered in
+    | AppServiceProvider — so the zone identifier lives in exactly one place.
+    |
+    */
+
+    'operational_timezone' => env('APP_OPERATIONAL_TIMEZONE', 'Asia/Kolkata'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |

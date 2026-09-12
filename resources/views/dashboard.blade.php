@@ -12,61 +12,74 @@
             </div>
 
             <div class="mt-4">
-                <p class="text-sm text-white/70">{{ __('Good') }} {{ now()->hour < 12 ? __('Morning') : (now()->hour < 17 ? __('Afternoon') : __('Evening')) }} 👋</p>
+                <p class="text-sm text-white/70">{{ __('Good') }} {{ now()->toIst()->hour < 12 ? __('Morning') : (now()->toIst()->hour < 17 ? __('Afternoon') : __('Evening')) }} 👋</p>
                 <h1 class="mt-0.5 text-xl font-semibold">{{ auth()->user()->name }}</h1>
-                <p class="text-xs text-white/60">{{ now()->format('l, d M Y') }}</p>
+                <p class="text-xs text-white/60">{{ now()->toIst()->format('l, d M Y') }}</p>
             </div>
 
             @if ($latestSession)
-                <div class="mt-5 rounded-2xl bg-white p-4 text-slate-900 shadow-sm">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs font-medium text-slate-400">{{ $latestSession->date->format('d M Y') }}</p>
-                            <p class="font-semibold">{{ $latestSession->name }}</p>
-                        </div>
-                        <x-shell.badge :tone="$latestSession->statusTone()">{{ $latestSession->status }}</x-shell.badge>
-                    </div>
+                @php $pct = $latestSession->duty_assignments_count > 0 ? round(100 * $latestSession->present_count / $latestSession->duty_assignments_count) : 0; @endphp
+                <div class="kg-enter relative mt-5 overflow-hidden rounded-3xl bg-white p-4 text-slate-900 shadow-lg shadow-navy-900/10 lg:p-6">
+                    <div class="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_100%_0%,rgba(37,99,235,0.06),transparent_55%)]"></div>
 
-                    <div class="mt-4 grid grid-cols-2 gap-3">
-                        <x-shell.stat-card :value="$latestSession->duty_assignments_count" label="Scheduled" tone="blue">
-                            <x-slot:icon>
-                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M9 8h1m8-4H6a2 2 0 0 0-2 2v16l4-2 4 2 4-2 4 2V6a2 2 0 0 0-2-2Z" /></svg>
-                            </x-slot:icon>
-                        </x-shell.stat-card>
-                        <x-shell.stat-card :value="$latestSession->present_count" label="Present" tone="green">
-                            <x-slot:icon>
-                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7" /></svg>
-                            </x-slot:icon>
-                        </x-shell.stat-card>
-                        <x-shell.stat-card :value="$latestSession->pending_count" label="Pending" tone="orange">
-                            <x-slot:icon>
-                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="M12 7v5l3 3" /></svg>
-                            </x-slot:icon>
-                        </x-shell.stat-card>
-                        <x-shell.stat-card :value="$latestSession->extra_count" label="Extra Present" tone="purple">
-                            <x-slot:icon>
-                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-                            </x-slot:icon>
-                        </x-shell.stat-card>
+                    <div class="lg:flex lg:items-center lg:gap-8">
+                        {{-- Identity + progress + action: fixed-width on desktop so the stat row gets the freed space, not a stretched single column. --}}
+                        <div class="lg:w-72 lg:shrink-0">
+                            <div class="flex items-center justify-between lg:block">
+                                <div>
+                                    <p class="text-xs font-medium text-slate-400">{{ $latestSession->date->format('d M Y') }}</p>
+                                    <p class="font-semibold lg:text-lg">{{ $latestSession->name }}</p>
+                                </div>
+                                <x-shell.badge :tone="$latestSession->statusTone()" dot class="lg:mt-2">{{ $latestSession->status }}</x-shell.badge>
+                            </div>
+
+                            <div class="mt-4">
+                                <div class="flex items-center justify-between text-xs text-slate-500">
+                                    <span>{{ __('Attendance Progress') }}</span>
+                                    <span class="font-semibold text-slate-700">{{ $pct }}%</span>
+                                </div>
+                                <div class="mt-1 h-2 rounded-full bg-slate-100">
+                                    <div class="kg-progress-fill h-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" style="width: {{ $pct }}%"></div>
+                                </div>
+                                <p class="mt-1 text-right text-xs text-slate-400">{{ $latestSession->present_count }} / {{ $latestSession->duty_assignments_count }}</p>
+                            </div>
+
+                            <div class="mt-4 hidden lg:block">
+                                <x-shell.button tone="primary" href="{{ route('attendance.shell.live', $latestSession) }}">
+                                    {{ __('Continue Attendance') }}
+                                </x-shell.button>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 grid flex-1 grid-cols-2 gap-3 lg:mt-0 lg:grid-cols-4">
+                            <x-shell.stat-card :value="$latestSession->duty_assignments_count" label="Scheduled" tone="blue">
+                                <x-slot:icon>
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M9 8h1m8-4H6a2 2 0 0 0-2 2v16l4-2 4 2 4-2 4 2V6a2 2 0 0 0-2-2Z" /></svg>
+                                </x-slot:icon>
+                            </x-shell.stat-card>
+                            <x-shell.stat-card :value="$latestSession->present_count" label="Present" tone="green">
+                                <x-slot:icon>
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7" /></svg>
+                                </x-slot:icon>
+                            </x-shell.stat-card>
+                            <x-shell.stat-card :value="$latestSession->pending_count" label="Pending" tone="orange">
+                                <x-slot:icon>
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="M12 7v5l3 3" /></svg>
+                                </x-slot:icon>
+                            </x-shell.stat-card>
+                            <x-shell.stat-card :value="$latestSession->extra_count" label="Extra Present" tone="purple">
+                                <x-slot:icon>
+                                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                </x-slot:icon>
+                            </x-shell.stat-card>
+                        </div>
                     </div>
 
                     @if ($latestSessionGender)
-                        <x-shell.gender-breakdown :breakdown="$latestSessionGender" :rows="['scheduled' => 'Scheduled', 'present' => 'Present']" class="mt-3 rounded-xl bg-slate-50 p-3" />
+                        <x-shell.gender-breakdown :breakdown="$latestSessionGender" :rows="['scheduled' => 'Scheduled', 'present' => 'Present']" class="mt-3 rounded-xl bg-slate-50 p-3 lg:mt-4" />
                     @endif
 
-                    @php $pct = $latestSession->duty_assignments_count > 0 ? round(100 * $latestSession->present_count / $latestSession->duty_assignments_count) : 0; @endphp
-                    <div class="mt-4">
-                        <div class="flex items-center justify-between text-xs text-slate-500">
-                            <span>{{ __('Attendance Progress') }}</span>
-                            <span class="font-semibold text-slate-700">{{ $pct }}%</span>
-                        </div>
-                        <div class="mt-1 h-2 rounded-full bg-slate-100">
-                            <div class="h-2 rounded-full bg-emerald-500" style="width: {{ $pct }}%"></div>
-                        </div>
-                        <p class="mt-1 text-right text-xs text-slate-400">{{ $latestSession->present_count }} / {{ $latestSession->duty_assignments_count }}</p>
-                    </div>
-
-                    <div class="mt-4">
+                    <div class="mt-4 lg:hidden">
                         <x-shell.button tone="primary" href="{{ route('attendance.shell.live', $latestSession) }}">
                             {{ __('Continue Attendance') }}
                         </x-shell.button>
@@ -86,9 +99,9 @@
     <div class="space-y-5">
         <div>
             <h2 class="mb-3 text-sm font-semibold text-slate-500">{{ __('Quick Actions') }}</h2>
-            <div class="grid grid-cols-3 gap-3">
+            <div class="grid grid-cols-3 gap-3 lg:grid-cols-6">
                 @if (auth()->user()->canManageSessions())
-                    <a href="{{ route('sessions.create') }}" class="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                    <a href="{{ route('sessions.create') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
                         <span class="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
                         </span>
@@ -96,7 +109,7 @@
                     </a>
                 @endif
 
-                <a href="{{ route('sessions.index') }}" class="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                <a href="{{ route('sessions.index') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
                     <span class="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
                         <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" /></svg>
                     </span>
@@ -104,7 +117,7 @@
                 </a>
 
                 @if ($latestSession)
-                    <a href="{{ route('attendance.shell.list', $latestSession) }}" class="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                    <a href="{{ route('attendance.shell.list', $latestSession) }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
                         <span class="flex h-9 w-9 items-center justify-center rounded-full bg-violet-50 text-violet-600">
                             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" /></svg>
                         </span>
@@ -112,21 +125,21 @@
                     </a>
                 @endif
 
-                <a href="{{ route('analytics.overview') }}" class="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                <a href="{{ route('analytics.overview') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
                     <span class="flex h-9 w-9 items-center justify-center rounded-full bg-orange-50 text-orange-500">
                         <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4" /></svg>
                     </span>
                     <span class="text-xs font-medium text-slate-600">{{ __('Analytics') }}</span>
                 </a>
 
-                <a href="{{ route('analytics.profile-search') }}" class="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                <a href="{{ route('analytics.profile-search') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
                     <span class="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                         <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-8 8a6 6 0 0 0-6 6h20a6 6 0 0 0-6-6H8Z" /></svg>
                     </span>
                     <span class="text-xs font-medium text-slate-600">{{ __('Khidmatguzars') }}</span>
                 </a>
 
-                <a href="{{ route('reports.index') }}" class="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                <a href="{{ route('reports.index') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
                     <span class="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
                         <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a1 1 0 0 0 1-1V9l-6-6H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1Z" /></svg>
                     </span>
@@ -142,11 +155,11 @@
             </div>
 
             @if ($recentSessions->isEmpty())
-                <x-shell.card class="text-center text-slate-400">{{ __('No duty sessions yet.') }}</x-shell.card>
+                <x-shell.empty-state title="{{ __('No duty sessions yet') }}" />
             @else
-                <div class="space-y-2">
+                <div class="space-y-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0 xl:grid-cols-3">
                     @foreach ($recentSessions as $session)
-                        <a href="{{ route('sessions.show', $session) }}" class="flex items-center justify-between rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                        <a href="{{ route('sessions.show', $session) }}" class="kg-card-hover flex items-center justify-between rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                             <div class="min-w-0">
                                 <p class="truncate font-medium text-slate-900">{{ $session->name }}</p>
                                 <p class="text-xs text-slate-400">{{ $session->date->format('d M Y') }}</p>

@@ -43,7 +43,7 @@ class SessionAttendanceExport implements WithMultipleSheets
                 ['Female Pending', $g['pending']['female']],
                 ['Unknown Pending', $g['pending']['unknown']],
                 ['', ''],
-                ['Generated At', now()->format('d M Y H:i')],
+                ['Generated At', now()->toIst()->format('d M Y H:i').' IST'],
             ],
             reportTitle: 'KG Attendance — Session Report',
             subtitle: $session->name.' · '.$session->date->format('d M Y').' · '.ucfirst($session->status),

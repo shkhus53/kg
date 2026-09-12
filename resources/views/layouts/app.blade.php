@@ -22,13 +22,20 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     <body class="min-h-screen bg-slate-50 font-sans text-slate-900 antialiased">
-        <div class="mx-auto min-h-screen max-w-md bg-slate-50 pb-24 sm:max-w-2xl lg:max-w-4xl">
+        {{-- Desktop (lg:+): persistent sidebar, content uses the freed-up
+             width instead of centering in a phone-width column. Mobile/
+             tablet below lg: unchanged — same narrow, thumb-friendly shell
+             as before, bottom-nav still drives navigation. --}}
+        <x-shell.sidebar-nav />
 
-            {{ $header ?? '' }}
+        <div class="mx-auto min-h-screen max-w-md bg-slate-50 pb-24 sm:max-w-2xl lg:max-w-none lg:pb-8 lg:pl-64">
+            <div class="lg:mx-auto lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl">
+                {{ $header ?? '' }}
 
-            <main class="px-5 py-5">
-                {{ $slot }}
-            </main>
+                <main class="px-5 py-5 lg:px-8 lg:py-8">
+                    {{ $slot }}
+                </main>
+            </div>
         </div>
 
         <x-shell.bottom-nav />

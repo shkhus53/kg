@@ -20,8 +20,13 @@
 /public/storage
 /storage/*.key
 /storage/pail
+/storage/backups/
 /vendor
 _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Local debug Android builds — never part of the web app's deployable source.
+*.apk
+/kg-attendance-debug-apk*

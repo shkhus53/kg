@@ -9,6 +9,7 @@ use App\Models\DutyAssignment;
 use App\Models\DutySession;
 use App\Models\ExtraPresent;
 use App\Models\Khidmatguzar;
+use App\Models\SessionReopenEvent;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -244,7 +245,12 @@ class AttendanceService
                     'status' => 'closed',
                     'closed_at' => now(),
                     'closed_by' => $actor->id,
+                    'is_reopened_for_correction' => false,
                 ]);
+
+                SessionReopenEvent::where('duty_session_id', $session->id)
+                    ->whereNull('closed_at')
+                    ->update(['closed_at' => now()]);
 
                 return ['result' => 'closed', 'session' => $lockedSession->fresh()];
             });
@@ -254,14 +260,60 @@ class AttendanceService
     }
 
     /**
+     * Rule 6: only Admin may reopen a Closed session, only for correction —
+     * this never resets status to draft/pending, it goes straight back to
+     * 'active' so the existing attendance state machine (and every existing
+     * mutation guard) applies unchanged. The reason is mandatory and
+     * recorded immutably; a correction made after reopening is just a
+     * normal AttendanceEvent, never a rewrite of the original one.
+     *
+     * @return array{result: string, session?: DutySession}
+     */
+    public function reopenSession(DutySession $session, User $actor, string $reason, ?string $detail = null): array
+    {
+        if (! $actor->isAdmin()) {
+            return ['result' => 'forbidden'];
+        }
+
+        return DB::transaction(function () use ($session, $actor, $reason, $detail) {
+            $lockedSession = DutySession::whereKey($session->id)->lockForUpdate()->first();
+
+            if ($lockedSession->status !== 'closed') {
+                return ['result' => 'invalid_state'];
+            }
+
+            $now = now();
+
+            $lockedSession->update([
+                'status' => 'active',
+                'is_reopened_for_correction' => true,
+                'reopened_at' => $now,
+                'reopened_by' => $actor->id,
+            ]);
+
+            SessionReopenEvent::create([
+                'duty_session_id' => $session->id,
+                'reopened_by' => $actor->id,
+                'reason' => $reason,
+                'detail' => $detail,
+                'reopened_at' => $now,
+            ]);
+
+            return ['result' => 'reopened', 'session' => $lockedSession->fresh()];
+        });
+    }
+
+    /**
      * Extra Present for a Khidmatguzar already known to the master but not
-     * scheduled in this session.
+     * scheduled in this session. Rule 4/5: Gender is mandatory on every
+     * Extra Present; an existing master Gender is never silently
+     * overwritten by this form, only backfilled if it was blank.
      *
      * @return array{result: string, extraPresent?: ExtraPresent}
      */
-    public function markExtraPresentKnown(DutySession $session, Khidmatguzar $khidmatguzar, Department $department, User $actor, ?string $remark = null): array
+    public function markExtraPresentKnown(DutySession $session, Khidmatguzar $khidmatguzar, Department $department, string $gender, User $actor, ?string $remark = null): array
     {
-        return DB::transaction(function () use ($session, $khidmatguzar, $department, $actor, $remark) {
+        return DB::transaction(function () use ($session, $khidmatguzar, $department, $gender, $actor, $remark) {
             $lockedSession = DutySession::whereKey($session->id)->lockForUpdate()->first();
 
             if (! $lockedSession->isActive()) {
@@ -272,15 +324,25 @@ class AttendanceService
                 return ['result' => 'invalid_department'];
             }
 
-            if (DutyAssignment::where('duty_session_id', $session->id)->where('khidmatguzar_id', $khidmatguzar->id)->exists()) {
+            // Rule 9: lock this Khidmatguzar's row before checking for a
+            // scheduled assignment — DutyListImportService::commit() takes
+            // the same lock before creating one, so the two paths cannot
+            // race each other into a "both scheduled and extra" state.
+            $lockedKhidmatguzar = Khidmatguzar::whereKey($khidmatguzar->id)->lockForUpdate()->first();
+
+            if (! $lockedKhidmatguzar->gender) {
+                $lockedKhidmatguzar->update(['gender' => $gender]);
+            }
+
+            if (DutyAssignment::where('duty_session_id', $session->id)->where('khidmatguzar_id', $lockedKhidmatguzar->id)->exists()) {
                 return ['result' => 'now_scheduled'];
             }
 
-            if ($existing = ExtraPresent::where('duty_session_id', $session->id)->where('khidmatguzar_id', $khidmatguzar->id)->first()) {
+            if ($existing = ExtraPresent::where('duty_session_id', $session->id)->where('khidmatguzar_id', $lockedKhidmatguzar->id)->first()) {
                 return ['result' => 'already_extra', 'extraPresent' => $existing];
             }
 
-            return $this->insertExtraPresent($session, $khidmatguzar, $department, $actor, $remark);
+            return $this->insertExtraPresent($session, $lockedKhidmatguzar, $department, $actor, $remark);
         });
     }
 
@@ -291,9 +353,9 @@ class AttendanceService
      *
      * @return array{result: string, extraPresent?: ExtraPresent, khidmatguzar?: Khidmatguzar}
      */
-    public function markExtraPresentNew(DutySession $session, string $itsId, string $fullName, Department $department, User $actor, ?string $remark = null): array
+    public function markExtraPresentNew(DutySession $session, string $itsId, string $fullName, string $gender, Department $department, User $actor, ?string $remark = null): array
     {
-        return DB::transaction(function () use ($session, $itsId, $fullName, $department, $actor, $remark) {
+        return DB::transaction(function () use ($session, $itsId, $fullName, $gender, $department, $actor, $remark) {
             $lockedSession = DutySession::whereKey($session->id)->lockForUpdate()->first();
 
             if (! $lockedSession->isActive()) {
@@ -305,7 +367,7 @@ class AttendanceService
             }
 
             try {
-                $khidmatguzar = Khidmatguzar::create(['its_id' => $itsId, 'full_name' => $fullName]);
+                $khidmatguzar = Khidmatguzar::create(['its_id' => $itsId, 'full_name' => $fullName, 'gender' => $gender]);
             } catch (QueryException $e) {
                 if (! $this->isDuplicateKeyError($e)) {
                     throw $e;
@@ -314,6 +376,9 @@ class AttendanceService
                 // never a duplicate master identity.
                 $khidmatguzar = Khidmatguzar::where('its_id', $itsId)->firstOrFail();
             }
+
+            // Rule 9 — see markExtraPresentKnown() for why this lock matters.
+            $khidmatguzar = Khidmatguzar::whereKey($khidmatguzar->id)->lockForUpdate()->first();
 
             if (DutyAssignment::where('duty_session_id', $session->id)->where('khidmatguzar_id', $khidmatguzar->id)->exists()) {
                 return ['result' => 'now_scheduled', 'khidmatguzar' => $khidmatguzar];

@@ -2,7 +2,10 @@
     <x-slot name="header">
         <x-shell.page-header title="Live Attendance" :subtitle="'Session: '.$dutySession->date->format('d M Y')" :back-url="route('sessions.show', $dutySession)">
             <x-slot:actions>
-                <x-shell.badge :tone="$dutySession->statusTone()">{{ $dutySession->status }}</x-shell.badge>
+                <div class="flex flex-col items-end gap-1">
+                    <x-shell.badge :tone="$dutySession->statusTone()">{{ $dutySession->status }}</x-shell.badge>
+                    <x-shell.connectivity-badge />
+                </div>
             </x-slot:actions>
 
             <div class="grid grid-cols-4 gap-2 text-center">
@@ -50,6 +53,12 @@
                 {{ __('This session is :status. Attendance marking is disabled.', ['status' => $dutySession->status]) }}
             </div>
         @endunless
+
+        {{-- Phase 2: hidden until JS confirms a non-zero offline queue for this session. --}}
+        <div id="offline-queue-banner" hidden class="rounded-2xl bg-orange-50 p-4 text-sm text-orange-700">
+            <span data-queue-text></span>
+            <button type="button" id="offline-sync-now" class="ml-2 font-semibold underline">{{ __('Sync now') }}</button>
+        </div>
 
         <x-shell.card>
             <form method="GET" action="{{ route('attendance.shell.live', $dutySession) }}" class="space-y-3">
@@ -102,13 +111,13 @@
         @if ($itsId !== '')
             @if ($matches->count() === 1)
                 @php $assignment = $matches->first(); @endphp
-                <x-shell.card x-data="{ remarkOpen: false }">
+                <x-shell.card class="kg-enter" x-data="{ remarkOpen: false }">
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="font-semibold text-slate-900">{{ $assignment->khidmatguzar->full_name }}</p>
                             <p class="text-xs text-slate-400">{{ __('ITS') }}: {{ $assignment->khidmatguzar->its_id }}</p>
                         </div>
-                        <x-shell.badge :tone="$assignment->current_status === 'present' ? 'green' : ($assignment->current_status === 'absent' ? 'red' : 'orange')">{{ $assignment->current_status }}</x-shell.badge>
+                        <x-shell.badge :tone="$assignment->current_status === 'present' ? 'green' : ($assignment->current_status === 'absent' ? 'red' : 'orange')" dot>{{ $assignment->current_status }}</x-shell.badge>
                     </div>
 
                     <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -124,7 +133,7 @@
                             {{ __('This person is in this session\'s duty list and not yet marked.') }}
                         </div>
 
-                        <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="mt-4 space-y-3">
+                        <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="mt-4 space-y-3 js-attendance-form" data-offline-action="present" data-assignment-id="{{ $assignment->id }}">
                             @csrf
                             <input type="hidden" name="assignment_ids[]" value="{{ $assignment->id }}">
                             <input type="hidden" name="its" value="{{ $itsId }}">
@@ -143,7 +152,7 @@
                         </form>
 
                         @if ($dutySession->isActive())
-                            <form method="POST" action="{{ route('attendance.absent', $dutySession) }}" class="mt-2" onsubmit="return confirm('{{ __('Mark this person Absent?') }}')">
+                            <form method="POST" action="{{ route('attendance.absent', $dutySession) }}" class="mt-2 js-attendance-form" data-offline-action="absent" data-assignment-id="{{ $assignment->id }}" onsubmit="return confirm('{{ __('Mark this person Absent?') }}')">
                                 @csrf
                                 <input type="hidden" name="assignment_id" value="{{ $assignment->id }}">
                                 <input type="hidden" name="its" value="{{ $itsId }}">
@@ -154,7 +163,7 @@
                         <div class="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">
                             <p class="font-semibold">{{ __('Already Present') }}</p>
                             <p class="text-xs">
-                                {{ $assignment->attendance_marked_at?->format('d M Y H:i') }}
+                                {{ $assignment->attendance_marked_at?->toIst()->format('d M Y H:i') }}
                                 @if ($assignment->attendanceMarkedBy) &middot; {{ $assignment->attendanceMarkedBy->name }} @endif
                             </p>
                         </div>
@@ -162,13 +171,13 @@
                         <div class="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
                             <p class="font-semibold">{{ __('Already marked Absent') }}</p>
                             <p class="text-xs">
-                                {{ $assignment->attendance_marked_at?->format('d M Y H:i') }}
+                                {{ $assignment->attendance_marked_at?->toIst()->format('d M Y H:i') }}
                                 @if ($assignment->attendanceMarkedBy) &middot; {{ $assignment->attendanceMarkedBy->name }} @endif
                             </p>
                         </div>
 
                         @if ($dutySession->isActive())
-                            <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="mt-3" x-data="{ submitting: false }" @submit="submitting = true">
+                            <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="mt-3 js-attendance-form" data-offline-action="present" data-assignment-id="{{ $assignment->id }}" x-data="{ submitting: false }" @submit="submitting = true">
                                 @csrf
                                 <input type="hidden" name="assignment_ids[]" value="{{ $assignment->id }}">
                                 <input type="hidden" name="its" value="{{ $itsId }}">
@@ -185,7 +194,7 @@
                         {{ __('ITS :its has :count separate duty assignments in this session. Select which one(s) to mark.', ['its' => $itsId, 'count' => $matches->count()]) }}
                     </p>
 
-                    <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="space-y-3">
+                    <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="space-y-3" onsubmit="return confirm('{{ __('Mark the selected assignment(s) Present?') }}')">
                         @csrf
                         <input type="hidden" name="its" value="{{ $itsId }}">
 
@@ -218,7 +227,7 @@
                     <p class="font-semibold text-violet-700">{{ __('Already marked Extra Present') }}</p>
                     <p class="mt-1 text-xs text-slate-500">
                         {{ $knownPerson->full_name }} &middot; {{ $alreadyExtra->department_name_snapshot }}
-                        &middot; {{ $alreadyExtra->marked_at->format('d M Y H:i') }}
+                        &middot; {{ $alreadyExtra->marked_at->toIst()->format('d M Y H:i') }}
                     </p>
                 </x-shell.card>
             @else
@@ -238,8 +247,11 @@
                             {{ __('Known person: :name.', ['name' => $knownPerson->full_name]) }}
                         @endif
                     </p>
+                    <p class="mt-1 text-[11px] text-slate-400">
+                        {{ __('Submitting this form works offline. Starting a new ITS search needs a connection.') }}
+                    </p>
 
-                    <form method="POST" action="{{ route('attendance.extra-present', $dutySession) }}" class="mt-4 space-y-3">
+                    <form method="POST" action="{{ route('attendance.extra-present', $dutySession) }}" class="mt-4 space-y-3 js-extra-present-form">
                         @csrf
                         <input type="hidden" name="its" value="{{ $itsId }}">
 
@@ -249,6 +261,19 @@
                                 <x-text-input id="full_name" name="full_name" type="text" class="mt-1 block w-full" required />
                             </div>
                         @endunless
+
+                        @php
+                            $knownGender = $knownPerson ? \App\Support\Gender::shortLabel($knownPerson->gender) : null;
+                            $knownGender = $knownGender === 'M' ? 'Male' : ($knownGender === 'F' ? 'Female' : null);
+                        @endphp
+                        <div>
+                            <x-input-label :value="__('Gender')" />
+                            <select name="gender" required class="mt-1 block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <option value="">{{ __('Choose gender…') }}</option>
+                                <option value="Male" @selected($knownGender === 'Male')>{{ __('Male') }}</option>
+                                <option value="Female" @selected($knownGender === 'Female')>{{ __('Female') }}</option>
+                            </select>
+                        </div>
 
                         <div>
                             <x-input-label :value="__('Select Department')" />
@@ -277,4 +302,173 @@
             @endif
         @endif
     </div>
+
+    @if ($dutySession->isActive())
+        <script>
+        (function () {
+            if (!window.KGOffline) return; // offline.js failed to load — every form still works as a normal POST, no behavior change.
+
+            var sessionId = {{ $dutySession->id }};
+            var userId = {{ auth()->id() }};
+            var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+            var offline = new window.KGOffline.OfflineAttendance({ sessionId: sessionId, userId: userId, csrfToken: csrfToken });
+            window.kgOffline = offline;
+
+            offline.provision().catch(function () {}); // best-effort; if we're already offline on load there's nothing to provision yet
+            offline.startAutoSync();
+
+            var badge = document.getElementById('connectivity-badge');
+            var banner = document.getElementById('offline-queue-banner');
+
+            // Every state pairs a distinct background tone + dot color + icon
+            // + label — never color alone, per the offline-UX requirement
+            // that connectivity/sync condition be unmistakable at a glance.
+            var BADGE_STATES = {
+                online: { bg: 'bg-white/10', dot: 'bg-emerald-400', pulse: false, icon: '<path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7"/>' },
+                syncing: { bg: 'bg-orange-400/20', dot: 'bg-orange-300', pulse: true, icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>' },
+                conflict: { bg: 'bg-red-400/25', dot: 'bg-red-400', pulse: true, icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>' },
+                offline: { bg: 'bg-slate-400/20', dot: 'bg-slate-300', pulse: false, icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m0 0l-3.536-3.536m3.536 3.536L21 21M15.536 8.464a5 5 0 010 7.072m-7.072 0a5 5 0 010-7.072m-2.828 9.9a9 9 0 010-12.728M3 3l18 18"/>' },
+            };
+
+            function paintBadge(state, label) {
+                var cfg = BADGE_STATES[state] || BADGE_STATES.online;
+                badge.dataset.state = state;
+                badge.className = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold transition-colors duration-200 ' + cfg.bg;
+                badge.querySelector('[data-label]').textContent = label;
+                var dot = badge.querySelector('[data-dot]');
+                dot.className = 'h-1.5 w-1.5 rounded-full ' + cfg.dot + (cfg.pulse ? ' kg-pulse-dot' : '');
+                var iconEl = badge.querySelector('[data-icon]');
+                if (iconEl) { iconEl.innerHTML = cfg.icon; }
+            }
+
+            function refreshUi() {
+                offline.queueSummary().then(function (s) {
+                    var pending = s.queued + s.syncing;
+                    var issues = s.conflict + s.rejected + s.operator_mismatch + s.blocked;
+
+                    if (issues > 0) {
+                        paintBadge('conflict', issues + ' need attention');
+                    } else if (pending > 0) {
+                        paintBadge('syncing', pending + ' pending sync');
+                    } else if (navigator.onLine) {
+                        paintBadge('online', 'Online');
+                    } else {
+                        paintBadge('offline', 'Offline');
+                    }
+
+                    if (pending + issues > 0) {
+                        banner.hidden = false;
+                        banner.querySelector('[data-queue-text]').textContent =
+                            pending + ' attendance action(s) waiting to sync' + (issues ? ', ' + issues + ' need review' : '') + '.';
+                    } else {
+                        banner.hidden = true;
+                    }
+                });
+            }
+
+            offline.onChange(refreshUi);
+            refreshUi();
+            setInterval(refreshUi, 5000);
+            window.addEventListener('online', refreshUi);
+            window.addEventListener('offline', refreshUi);
+
+            document.getElementById('offline-sync-now').addEventListener('click', function () {
+                offline.sync({ manual: true }).then(refreshUi);
+            });
+
+            // Single-assignment Present/Absent/Correction forms: try a real
+            // network request first (this is how "Wi-Fi but no internet" is
+            // actually detected, not navigator.onLine alone); only fall back
+            // to the offline queue if that request genuinely fails.
+            document.querySelectorAll('.js-attendance-form').forEach(function (form) {
+                form.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    var action = form.dataset.offlineAction;
+                    var assignmentId = parseInt(form.dataset.assignmentId, 10);
+                    var remarkField = form.querySelector('[name="remark"]');
+                    var remark = remarkField ? remarkField.value : null;
+
+                    var ctrl = new AbortController();
+                    var timeout = setTimeout(function () { ctrl.abort(); }, 4000);
+
+                    fetch(form.action, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        redirect: 'follow',
+                        signal: ctrl.signal,
+                        headers: { 'X-CSRF-TOKEN': csrfToken },
+                        body: new FormData(form),
+                    }).then(function (res) {
+                        clearTimeout(timeout);
+                        if (res.ok || res.redirected) {
+                            window.location.href = res.url || window.location.href;
+                        } else {
+                            return Promise.reject(new Error('http_' + res.status));
+                        }
+                    }).catch(function () {
+                        clearTimeout(timeout);
+                        offline.markAttendance(assignmentId, action, remark).then(function () {
+                            queueOfflineFeedback(form);
+                            refreshUi();
+                        });
+                    });
+                });
+            });
+
+            function queueOfflineFeedback(form) {
+                var note = document.createElement('p');
+                note.className = 'mt-2 text-xs font-semibold text-orange-600';
+                note.textContent = '{{ __('Saved offline — will sync automatically when connection returns.') }}';
+                form.after(note);
+                form.querySelectorAll('button, input, select, textarea').forEach(function (el) { el.disabled = true; });
+
+                var card = form.closest('.kg-card-hover, [class*="rounded-2xl"]');
+                if (card) { card.classList.add('kg-flash-success'); }
+            }
+
+            // Extra Present: can be queued offline once this form has already
+            // been reached while online (search itself still requires
+            // connectivity — starting a brand-new Extra Present lookup from a
+            // fully offline cold start is not supported in this phase, since
+            // it needs a client-rendered search UI that doesn't exist yet).
+            document.querySelectorAll('.js-extra-present-form').forEach(function (form) {
+                form.addEventListener('submit', function (e) {
+                    e.preventDefault();
+
+                    var ctrl = new AbortController();
+                    var timeout = setTimeout(function () { ctrl.abort(); }, 4000);
+
+                    fetch(form.action, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        redirect: 'follow',
+                        signal: ctrl.signal,
+                        headers: { 'X-CSRF-TOKEN': csrfToken },
+                        body: new FormData(form),
+                    }).then(function (res) {
+                        clearTimeout(timeout);
+                        if (res.ok || res.redirected) {
+                            window.location.href = res.url || window.location.href;
+                        } else {
+                            return Promise.reject(new Error('http_' + res.status));
+                        }
+                    }).catch(function () {
+                        clearTimeout(timeout);
+                        var data = new FormData(form);
+                        offline.markExtraPresent({
+                            its: data.get('its'),
+                            fullName: data.get('full_name'),
+                            gender: data.get('gender'),
+                            departmentId: data.get('department_id') ? parseInt(data.get('department_id'), 10) : null,
+                            remark: data.get('remark'),
+                        }).then(function () {
+                            queueOfflineFeedback(form);
+                            refreshUi();
+                        });
+                    });
+                });
+            });
+        })();
+        </script>
+    @endif
 </x-app-layout>

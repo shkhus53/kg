@@ -7,7 +7,7 @@
         'warning' => 'bg-orange-500 text-white hover:bg-orange-600 disabled:bg-orange-300',
         'outline' => 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50',
     ];
-    $classes = 'inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold tracking-wide transition disabled:cursor-not-allowed '.($tones[$tone] ?? $tones['primary']);
+    $classes = 'kg-tap inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold tracking-wide transition disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 '.($tones[$tone] ?? $tones['primary']);
 @endphp
 
 @if ($href)

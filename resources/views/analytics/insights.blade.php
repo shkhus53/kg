@@ -9,7 +9,7 @@
         <p class="text-xs text-slate-400">{{ \Carbon\Carbon::parse($from)->format('d M Y') }} – {{ \Carbon\Carbon::parse($to)->format('d M Y') }}</p>
 
         @if ($totalScheduled === 0)
-            <x-shell.card class="text-center text-slate-400">{{ __('No attendance data available for this period.') }}</x-shell.card>
+            <x-shell.empty-state title="{{ __('No attendance data available for this period') }}" />
         @else
             <x-shell.card>
                 <p class="text-sm text-slate-600">{{ __('Total scheduled assignments in period') }}</p>

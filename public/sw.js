@@ -1,24 +1,29 @@
 // KG Attendance service worker.
 //
-// Scope is intentionally narrow: this app writes attendance state to a
-// server database on every action, and every screen shows live counters
+// Scope is still narrow: this app writes attendance state to a server
+// database on every action, and every screen shows live counters
 // (Scheduled/Present/Pending/Extra) that must never be served stale. So:
 //
-//   - Navigations (HTML pages) and any non-GET request: NEVER cached.
-//     Always go to the network. If the network fails, the browser's own
-//     offline error is shown — we do not fabricate an offline attendance
-//     flow (there isn't one; see Phase 10 spec, offline attendance is
-//     explicitly out of scope).
+//   - Navigations (HTML pages) and any non-GET request: NEVER served from
+//     cache when the network succeeds. Authenticated, server-rendered pages
+//     are never treated as offline-authoritative data.
 //   - Only same-origin, versioned build assets under /build/ (hashed
 //     filenames from Vite) and the icon files are cache-first, since a
 //     hashed filename changes whenever its content changes.
 //
-// This exists purely to satisfy PWA installability (a registered service
-// worker with a fetch handler); it is not an offline-attendance system.
+// Phase 2 addition: real offline attendance now exists, backed entirely by
+// IndexedDB (see resources/js/offline.js), not by caching pages. The one
+// thing this worker adds is a navigation FALLBACK: if a page navigation
+// fails outright (genuinely offline, browser/app just restarted, no prior
+// in-memory app state), we serve one static, non-authenticated,
+// non-session-specific shell (/offline.html) instead of the browser's bare
+// "No internet" error — that shell reads the same IndexedDB data and lets
+// the operator keep working. It is never a cached copy of a real page.
 
-const STATIC_CACHE = 'kg-static-v1';
+const STATIC_CACHE = 'kg-static-v3';
 
 const CACHEABLE_PREFIXES = ['/build/', '/icons/'];
+const OFFLINE_FALLBACK = '/offline.html';
 
 function isCacheable(url) {
     if (url.origin !== self.location.origin) {
@@ -29,6 +34,7 @@ function isCacheable(url) {
 }
 
 self.addEventListener('install', (event) => {
+    event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.add(OFFLINE_FALLBACK)));
     self.skipWaiting();
 });
 
@@ -46,6 +52,17 @@ self.addEventListener('fetch', (event) => {
 
     if (request.method !== 'GET') {
         return; // never intercept mutations (attendance marks, session close, imports, etc.)
+    }
+
+    if (request.mode === 'navigate') {
+        // Try the network first — a real page load always wins when
+        // reachable. Only on outright network failure (truly offline) do we
+        // fall back, and only to the static generic shell, never to a
+        // cached copy of the real page.
+        event.respondWith(
+            fetch(request).catch(() => caches.match(OFFLINE_FALLBACK))
+        );
+        return;
     }
 
     const url = new URL(request.url);

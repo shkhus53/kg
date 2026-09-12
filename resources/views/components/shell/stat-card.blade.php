@@ -1,4 +1,4 @@
-@props(['value', 'label', 'tone' => 'blue', 'compact' => false])
+@props(['value', 'label', 'tone' => 'blue', 'compact' => false, 'clickable' => false])
 
 @php
     $tones = [
@@ -21,18 +21,21 @@
 
 @if ($compact)
     {{-- No icon bubble: used in 3-up grids where the icon leaves too little room for the label at mobile width. --}}
-    <div {{ $attributes->merge(['class' => 'rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm']) }}>
-        <div class="text-lg font-semibold leading-tight {{ $valueTone }}">{{ $value }}</div>
+    <div {{ $attributes->merge(['class' => 'kg-card-hover rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm']) }}>
+        <div class="text-lg font-semibold leading-tight tabular-nums {{ $valueTone }}" x-data x-init="$el.classList.add('kg-count-pop')">{{ $value }}</div>
         <div class="text-xs text-slate-500">{{ $label }}</div>
     </div>
 @else
-    <div {{ $attributes->merge(['class' => 'flex items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm']) }}>
+    <div {{ $attributes->merge(['class' => 'kg-card-hover flex items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm']) }}>
         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full {{ $iconTone }}">
             {{ $icon ?? '' }}
         </span>
-        <div class="min-w-0">
-            <div class="text-lg font-semibold leading-tight text-slate-900">{{ $value }}</div>
+        <div class="min-w-0 flex-1">
+            <div class="text-lg font-semibold leading-tight tabular-nums text-slate-900" x-data x-init="$el.classList.add('kg-count-pop')">{{ $value }}</div>
             <div class="truncate text-xs text-slate-500">{{ $label }}</div>
         </div>
+        @if ($clickable)
+            <svg class="h-4 w-4 shrink-0 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m9 6 6 6-6 6" /></svg>
+        @endif
     </div>
 @endif

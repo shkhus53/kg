@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AttendanceEvent;
 use App\Models\Department;
 use App\Models\DutyAssignment;
 use App\Models\DutySession;
 use App\Models\ExtraPresent;
 use App\Models\Khidmatguzar;
+use App\Services\ReportService;
 use App\Support\Gender;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +22,8 @@ use Illuminate\View\View;
  */
 class AnalyticsController extends Controller
 {
+    public function __construct(private readonly ReportService $reports) {}
+
     public function overview(Request $request): View
     {
         [$from, $to] = $this->resolveRange($request);
@@ -28,7 +32,7 @@ class AnalyticsController extends Controller
 
         $base = DutyAssignment::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
-            ->whereBetween('duty_sessions.date', [$from, $to]);
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to);
 
         if ($departmentId) {
             $base->where('duty_assignments.department_id', $departmentId);
@@ -58,7 +62,7 @@ class AnalyticsController extends Controller
 
         $extraQuery = ExtraPresent::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'extra_presents.duty_session_id')
-            ->whereBetween('duty_sessions.date', [$from, $to]);
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to);
         if ($departmentId) {
             $extraQuery->where('extra_presents.department_id', $departmentId);
         }
@@ -77,7 +81,7 @@ class AnalyticsController extends Controller
         // never combined with another even if same date, per spec.
         $trend = DutyAssignment::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
-            ->whereBetween('duty_sessions.date', [$from, $to])
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
             ->groupBy('duty_sessions.id', 'duty_sessions.name', 'duty_sessions.date', 'duty_sessions.status')
             ->orderBy('duty_sessions.date')
             ->selectRaw("
@@ -104,7 +108,7 @@ class AnalyticsController extends Controller
             'to' => $to,
             'departmentId' => $departmentId,
             'sessionId' => $sessionId,
-            'sessionOptions' => DutySession::whereBetween('date', [$from, $to])->orderByDesc('date')->get(['id', 'name', 'date']),
+            'sessionOptions' => DutySession::whereDate('date', '>=', $from)->whereDate('date', '<=', $to)->orderByDesc('date')->get(['id', 'name', 'date']),
             'departmentOptions' => Department::orderBy('name')->get(['id', 'name']),
             'scheduled' => $scheduled,
             'genderBreakdown' => $genderBreakdown,
@@ -143,12 +147,12 @@ class AnalyticsController extends Controller
         $totalScheduled = $departments->sum('scheduled');
         $totalExtra = ExtraPresent::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'extra_presents.duty_session_id')
-            ->whereBetween('duty_sessions.date', [$from, $to])
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
             ->count();
 
         $mostActiveSession = DutyAssignment::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
-            ->whereBetween('duty_sessions.date', [$from, $to])
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
             ->groupBy('duty_sessions.id', 'duty_sessions.name', 'duty_sessions.date')
             ->orderByDesc(DB::raw('COUNT(*)'))
             ->selectRaw('duty_sessions.id, duty_sessions.name, duty_sessions.date, COUNT(*) as scheduled')
@@ -156,7 +160,7 @@ class AnalyticsController extends Controller
 
         $multiAssignmentPeople = DutyAssignment::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
-            ->whereBetween('duty_sessions.date', [$from, $to])
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
             ->groupBy('duty_assignments.khidmatguzar_id')
             ->havingRaw('COUNT(*) > 1')
             ->get(['duty_assignments.khidmatguzar_id'])
@@ -164,7 +168,7 @@ class AnalyticsController extends Controller
 
         $pendingInActive = DutyAssignment::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
-            ->whereBetween('duty_sessions.date', [$from, $to])
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
             ->where('duty_sessions.status', 'active')
             ->where('duty_assignments.current_status', 'pending')
             ->count();
@@ -183,6 +187,22 @@ class AnalyticsController extends Controller
     }
 
     /**
+     * Operator Analytics (Phase 6): operational workload visibility, NOT a
+     * leaderboard — no ranking, no gamification, just what each
+     * admin/operator account actually did in the selected window. The query
+     * itself lives in ReportService::operatorActivityReport() so this
+     * on-screen view and the Phase 8 PDF/Excel export can never disagree.
+     * "View Activity" links into the Audit Log rather than duplicating a
+     * second activity feed.
+     */
+    public function operators(Request $request): View
+    {
+        [$from, $to] = $this->resolveRange($request);
+
+        return view('analytics.operators', $this->reports->operatorActivityReport($from, $to));
+    }
+
+    /**
      * Khidmatguzar Directory — PERSON-level, one row per Khidmatguzar,
      * paginated. Per-row stats are the same all-time definitions used by
      * the Profile page (Directory and Profile must agree, per spec), using
@@ -194,10 +214,20 @@ class AnalyticsController extends Controller
      * people appear via WHERE EXISTS — they do not change what a shown
      * person's own all-time numbers mean.
      */
+    /**
+     * Drill-down entry point: Overview/Departments status counts and
+     * department rows link here with department_id/status/session_id (and
+     * from/to) preset, narrowing to exactly the people whose OWN assignment
+     * satisfies every given condition together — not independently, which
+     * would otherwise let a person surface under "Dept X / Absent" via an
+     * absence in a completely different department.
+     */
     public function directory(Request $request): View
     {
         $query = trim((string) $request->query('q', ''));
         $departmentId = $request->query('department_id');
+        $status = $request->query('status');
+        $sessionId = $request->query('session_id');
         $jamaat = trim((string) $request->query('jamaat', ''));
         $from = $request->query('from');
         $to = $request->query('to');
@@ -218,17 +248,19 @@ class AnalyticsController extends Controller
                 $q->where(fn ($qq) => $qq->where('its_id', 'like', "%{$query}%")->orWhere('full_name', 'like', "%{$escaped}%"));
             })
             ->when($jamaat !== '', fn ($q) => $q->where('jamaat', 'like', "%{$jamaat}%"))
-            ->when($departmentId, fn ($q) => $q->whereExists(function ($sub) use ($departmentId) {
-                $sub->selectRaw('1')->from('duty_assignments')
-                    ->whereColumn('duty_assignments.khidmatguzar_id', 'khidmatguzars.id')
-                    ->where('duty_assignments.department_id', $departmentId);
-            }))
-            ->when($from && $to, fn ($q) => $q->whereExists(function ($sub) use ($from, $to) {
-                $sub->selectRaw('1')->from('duty_assignments')
-                    ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
-                    ->whereColumn('duty_assignments.khidmatguzar_id', 'khidmatguzars.id')
-                    ->whereBetween('duty_sessions.date', [$from, $to]);
-            }))
+            ->when($departmentId || $status || $sessionId || ($from && $to), function ($q) use ($departmentId, $status, $sessionId, $from, $to) {
+                $q->whereExists(function ($sub) use ($departmentId, $status, $sessionId, $from, $to) {
+                    $sub->selectRaw('1')->from('duty_assignments')
+                        ->whereColumn('duty_assignments.khidmatguzar_id', 'khidmatguzars.id')
+                        ->when($departmentId, fn ($qq) => $qq->where('duty_assignments.department_id', $departmentId))
+                        ->when($status, fn ($qq) => $qq->where('duty_assignments.current_status', $status))
+                        ->when($sessionId, fn ($qq) => $qq->where('duty_assignments.duty_session_id', $sessionId))
+                        ->when($from && $to && ! $sessionId, function ($qq) use ($from, $to) {
+                            $qq->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+                                ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to);
+                        });
+                });
+            })
             ->when($hasServed, fn ($q) => $q->whereExists(function ($sub) {
                 $sub->selectRaw('1')->from('duty_assignments')
                     ->whereColumn('duty_assignments.khidmatguzar_id', 'khidmatguzars.id');
@@ -246,12 +278,37 @@ class AnalyticsController extends Controller
         return view('analytics.profile-search', [
             'query' => $query,
             'departmentId' => $departmentId,
+            'status' => $status,
+            'sessionId' => $sessionId,
             'jamaat' => $jamaat,
             'from' => $from,
             'to' => $to,
             'hasServed' => $hasServed,
             'departmentOptions' => Department::orderBy('name')->get(['id', 'name']),
+            'departmentName' => $departmentId ? Department::find($departmentId)?->name : null,
+            'sessionName' => $sessionId ? DutySession::find($sessionId)?->name : null,
             'matches' => $khidmatguzars,
+        ]);
+    }
+
+    /**
+     * Deepest drill-down level: one specific DutyAssignment's full
+     * AttendanceEvent trail — who marked what, when, and via what context
+     * (individual/bulk/offline sync). Read-only, same broad visibility as
+     * every other analytics screen; never edits history.
+     */
+    public function assignmentDetail(DutyAssignment $dutyAssignment): View
+    {
+        $dutyAssignment->load(['khidmatguzar:id,its_id,full_name', 'department:id,name', 'dutySession:id,name,date,status']);
+
+        $events = AttendanceEvent::where('duty_assignment_id', $dutyAssignment->id)
+            ->with('performedBy:id,name')
+            ->orderBy('performed_at')
+            ->get();
+
+        return view('analytics.assignment', [
+            'assignment' => $dutyAssignment,
+            'events' => $events,
         ]);
     }
 
@@ -308,7 +365,7 @@ class AnalyticsController extends Controller
             ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
             ->when($historyDeptId, fn ($q) => $q->where('duty_assignments.department_id', $historyDeptId))
             ->when($historyStatus, fn ($q) => $q->where('duty_assignments.current_status', $historyStatus))
-            ->when($historyFrom && $historyTo, fn ($q) => $q->whereBetween('duty_sessions.date', [$historyFrom, $historyTo]))
+            ->when($historyFrom && $historyTo, fn ($q) => $q->whereDate('duty_sessions.date', '>=', $historyFrom)->whereDate('duty_sessions.date', '<=', $historyTo))
             ->orderByDesc('duty_sessions.date')
             ->orderByDesc('duty_assignments.id')
             ->select('duty_assignments.*')
@@ -349,7 +406,7 @@ class AnalyticsController extends Controller
         $query = DutyAssignment::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
             ->join('departments', 'departments.id', '=', 'duty_assignments.department_id')
-            ->whereBetween('duty_sessions.date', [$from, $to]);
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to);
 
         if ($sessionId) {
             $query->where('duty_assignments.duty_session_id', $sessionId);
@@ -382,8 +439,8 @@ class AnalyticsController extends Controller
         $to = $request->query('to');
 
         if (! $from || ! $to) {
-            $to = now()->format('Y-m-d');
-            $from = now()->subDays(30)->format('Y-m-d');
+            $to = now()->toIst()->format('Y-m-d');
+            $from = now()->toIst()->subDays(30)->format('Y-m-d');
         }
 
         return [$from, $to];

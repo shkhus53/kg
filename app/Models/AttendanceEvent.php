@@ -22,6 +22,16 @@ class AttendanceEvent extends Model
         return $this->belongsTo(DutyAssignment::class);
     }
 
+    public function dutySession(): BelongsTo
+    {
+        return $this->belongsTo(DutySession::class);
+    }
+
+    public function khidmatguzar(): BelongsTo
+    {
+        return $this->belongsTo(Khidmatguzar::class);
+    }
+
     public function performedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'performed_by');

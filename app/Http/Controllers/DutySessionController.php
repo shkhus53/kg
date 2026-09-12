@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\DutySession;
+use App\Models\SessionReopenEvent;
 use App\Services\AttendanceService;
 use App\Services\ReportService;
 use Illuminate\Http\RedirectResponse;
@@ -18,7 +19,10 @@ class DutySessionController extends Controller
 
     public function index(): View
     {
-        $sessions = DutySession::latest('date')->latest('id')->paginate(15);
+        $sessions = DutySession::withCount([
+            'dutyAssignments as scheduled_count',
+            'dutyAssignments as present_count' => fn ($q) => $q->where('current_status', 'present'),
+        ])->latest('date')->latest('id')->paginate(15);
 
         return view('sessions.index', ['sessions' => $sessions]);
     }
@@ -50,7 +54,7 @@ class DutySessionController extends Controller
 
     public function show(DutySession $dutySession): View
     {
-        $dutySession->load('importBatches.uploadedBy');
+        $dutySession->load('importBatches.uploadedBy', 'reopenEvents.reopenedBy');
 
         return view('sessions.show', ['dutySession' => $dutySession]);
     }
@@ -99,6 +103,25 @@ class DutySessionController extends Controller
                 ->with('flash_error', $outcome['pending_count'].' pending assignment(s) remain — resolve them before closing.'),
             default => redirect()->route('sessions.show', $dutySession)
                 ->with('status_error', 'Only an Active session can be closed.'),
+        };
+    }
+
+    public function reopen(Request $request, DutySession $dutySession): RedirectResponse
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'in:'.implode(',', array_keys(SessionReopenEvent::REASONS))],
+            'detail' => ['required_if:reason,other', 'nullable', 'string', 'max:1000'],
+        ]);
+
+        $outcome = $this->attendance->reopenSession($dutySession, $request->user(), $validated['reason'], $validated['detail'] ?? null);
+
+        return match ($outcome['result']) {
+            'reopened' => redirect()->route('sessions.show', $dutySession)
+                ->with('status', 'Session reopened for correction.'),
+            'forbidden' => redirect()->route('sessions.show', $dutySession)
+                ->with('status_error', 'Only Admin can reopen a session.'),
+            default => redirect()->route('sessions.show', $dutySession)
+                ->with('status_error', 'Only a Closed session can be reopened.'),
         };
     }
 }

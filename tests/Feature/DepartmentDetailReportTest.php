@@ -51,7 +51,7 @@ class DepartmentDetailReportTest extends TestCase
         $this->makeAssignment($session, $deptB, $batch, 'F', 'absent');
 
         $extraKg = Khidmatguzar::create(['its_id' => (string) random_int(10000000, 99999999), 'full_name' => 'Dept Extra Person']);
-        app(AttendanceService::class)->markExtraPresentKnown($session, $extraKg, $deptA, $user);
+        app(AttendanceService::class)->markExtraPresentKnown($session, $extraKg, $deptA, 'Male', $user);
 
         return [$session, $deptA, $deptB, $user];
     }
