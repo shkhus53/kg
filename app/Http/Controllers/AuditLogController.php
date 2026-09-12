@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\AttendanceEvent;
 use App\Models\Department;
 use App\Models\DutySession;
+use App\Models\ImportBatch;
+use App\Models\MasterDataChangeLog;
 use App\Models\SessionReopenEvent;
 use App\Models\SyncedEvent;
 use App\Models\User;
@@ -68,8 +70,10 @@ class AuditLogController extends Controller
         $events = $this->attendanceEvents($filters);
         $reopens = $this->reopenEvents($filters);
         $syncIssues = $this->syncIssueEvents($filters);
+        $imports = $this->importEvents($filters);
+        $masterDataChanges = $this->masterDataEvents($filters);
 
-        $merged = $events->concat($reopens)->concat($syncIssues)->sortByDesc('timestamp')->values();
+        $merged = $events->concat($reopens)->concat($syncIssues)->concat($imports)->concat($masterDataChanges)->sortByDesc('timestamp')->values();
 
         $page = max(1, (int) $request->query('page', 1));
         $totalPages = max(1, (int) ceil($merged->count() / self::PER_PAGE));
@@ -208,6 +212,94 @@ class AuditLogController extends Controller
             'description' => 'Offline sync '.str_replace('_', ' ', $s->last_result).' ('.$s->action.'): '.($s->detail ?? 'no detail'),
             'actor' => $s->syncedBy->name ?? '—',
             'session' => $sessionNames[$s->duty_session_id] ?? '—',
+            'department' => null,
+            'remark' => null,
+        ]);
+    }
+
+    /**
+     * Duty-list import history, surfaced centrally rather than only via the
+     * separate Import Center — ImportBatch rows are append-only (one row
+     * per upload, never updated after creation), so this is genuine
+     * historical data, not a fabricated event. Has no department dimension
+     * (an import batch spans every department in the file), so — like
+     * reopen/sync-issue events above — excluded once a department filter or
+     * ITS/name search narrows the view to something an import row can't
+     * meaningfully match.
+     */
+    private function importEvents(array $filters)
+    {
+        if ($filters['department_id'] || $filters['q'] !== '') {
+            return collect();
+        }
+        if ($filters['action'] && $filters['action'] !== 'import') {
+            return collect();
+        }
+
+        $query = ImportBatch::query()->with(['dutySession', 'uploadedBy']);
+
+        if ($filters['session_id']) {
+            $query->where('duty_session_id', $filters['session_id']);
+        }
+        if ($filters['operator_id']) {
+            $query->where('uploaded_by', $filters['operator_id']);
+        }
+        [$from, $to] = $this->istDateBoundsToUtc($filters);
+        if ($from) {
+            $query->where('created_at', '>=', $from);
+        }
+        if ($to) {
+            $query->where('created_at', '<=', $to);
+        }
+
+        return $query->orderByDesc('created_at')->limit(200)->get()->map(fn (ImportBatch $b) => [
+            'timestamp' => $b->created_at,
+            'type' => 'import',
+            'description' => 'Duty list imported — '.$b->original_filename.' ('.ucfirst($b->status).', '.$b->valid_rows.' valid / '.$b->total_rows.' rows)',
+            'actor' => $b->uploadedBy->name ?? '—',
+            'session' => $b->dutySession->name ?? '—',
+            'department' => null,
+            'remark' => null,
+        ]);
+    }
+
+    /**
+     * Master-data (Department/Miqaat/Event/Venue) field changes, read from
+     * the existing append-only MasterDataChangeLog rather than a second
+     * audit mechanism. Has no session/department-of-attendance dimension of
+     * its own (entity_type/entity_id are the master record itself, e.g. a
+     * Department row being edited — not a session's department), so
+     * excluded once a session or department filter narrows the view, same
+     * as the other session-less categories above.
+     */
+    private function masterDataEvents(array $filters)
+    {
+        if ($filters['session_id'] || $filters['department_id'] || $filters['q'] !== '') {
+            return collect();
+        }
+        if ($filters['action'] && $filters['action'] !== 'master_data_change') {
+            return collect();
+        }
+
+        $query = MasterDataChangeLog::query()->with('changedBy');
+
+        if ($filters['operator_id']) {
+            $query->where('changed_by', $filters['operator_id']);
+        }
+        [$from, $to] = $this->istDateBoundsToUtc($filters);
+        if ($from) {
+            $query->where('changed_at', '>=', $from);
+        }
+        if ($to) {
+            $query->where('changed_at', '<=', $to);
+        }
+
+        return $query->orderByDesc('changed_at')->limit(200)->get()->map(fn (MasterDataChangeLog $c) => [
+            'timestamp' => $c->changed_at,
+            'type' => 'master_data_change',
+            'description' => ucfirst($c->entity_type).' #'.$c->entity_id.' — '.$c->field.' changed from "'.($c->old_value ?? '—').'" to "'.($c->new_value ?? '—').'"',
+            'actor' => $c->changedBy->name ?? '—',
+            'session' => '—',
             'department' => null,
             'remark' => null,
         ]);

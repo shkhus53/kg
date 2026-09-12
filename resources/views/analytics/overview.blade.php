@@ -62,6 +62,13 @@
                 </x-shell.stat-card>
             </div>
 
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <x-shell.stat-card compact :value="$operatorsActive" label="Operators Active" tone="blue" />
+                <x-shell.stat-card compact :value="$corrections" label="Corrections" tone="orange" />
+                <x-shell.stat-card compact :value="$reopenedSessions" label="Reopened Sessions" tone="orange" />
+                <x-shell.stat-card compact :value="$importsCount" label="Imports" tone="green" />
+            </div>
+
             @if ($pending > 0)
                 <x-shell.info-card>
                     <a href="{{ route('analytics.profile-search', [...$drillBase, 'status' => 'pending']) }}" class="underline">

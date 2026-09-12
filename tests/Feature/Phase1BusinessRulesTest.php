@@ -194,14 +194,21 @@ class Phase1BusinessRulesTest extends TestCase
         $this->assertNotNull($event->fresh()->closed_at);
     }
 
-    /** Permission mechanism swap (role -> can:) preserves existing viewer/operator/admin behavior. */
-    public function test_manage_sessions_permission_matches_prior_role_behavior(): void
+    /**
+     * Session lifecycle (activate_sessions) became Admin-only by default
+     * under the granular permission system — an Operator no longer
+     * activates sessions by default, only an Admin (or an Operator an
+     * Admin explicitly grants activate_sessions to).
+     */
+    public function test_activate_sessions_permission_defaults_to_admin_only(): void
     {
         $viewer = User::factory()->viewer()->create();
         $operator = $this->operator();
+        $admin = User::factory()->admin()->create();
         $draft = DutySession::create(['name' => 'D', 'date' => now()->format('Y-m-d'), 'status' => 'draft']);
 
         $this->actingAs($viewer)->post(route('sessions.activate', $draft))->assertForbidden();
-        $this->actingAs($operator)->post(route('sessions.activate', $draft))->assertRedirect();
+        $this->actingAs($operator)->post(route('sessions.activate', $draft))->assertForbidden();
+        $this->actingAs($admin)->post(route('sessions.activate', $draft))->assertRedirect();
     }
 }

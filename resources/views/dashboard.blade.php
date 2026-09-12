@@ -14,8 +14,36 @@
             <div class="mt-4">
                 <p class="text-sm text-white/70">{{ __('Good') }} {{ now()->toIst()->hour < 12 ? __('Morning') : (now()->toIst()->hour < 17 ? __('Afternoon') : __('Evening')) }} 👋</p>
                 <h1 class="mt-0.5 text-xl font-semibold">{{ auth()->user()->name }}</h1>
-                <p class="text-xs text-white/60">{{ now()->toIst()->format('l, d M Y') }}</p>
+
+                <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    <span class="flex items-center gap-1.5 text-xs text-white/70">
+                        <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z" /></svg>
+                        {{ now()->toIst()->format('l, d M Y') }}
+                    </span>
+
+                    <button type="button" x-init="$el.addEventListener('click', () => $dispatch('open-calendar-modal'))"
+                            aria-haspopup="dialog"
+                            class="kg-tap flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/90 hover:bg-white/15">
+                        <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 0 1 8.646 3.646 9.003 9.003 0 0 0 12 21a9.003 9.003 0 0 0 8.354-5.646Z" /></svg>
+                        {{ $hijriToday->format() }}
+                        <svg class="h-3 w-3 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m9 6 6 6-6 6" /></svg>
+                    </button>
+                </div>
             </div>
+
+            @if (! empty($todaysMiqaats))
+                <div class="kg-enter mt-4 flex items-start gap-3 rounded-2xl bg-white/10 p-3.5">
+                    <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 0 1 8.646 3.646 9.003 9.003 0 0 0 12 21a9.003 9.003 0 0 0 8.354-5.646Z" /></svg>
+                    </span>
+                    <div class="min-w-0">
+                        <p class="truncate text-sm font-semibold text-white">{{ $todaysMiqaats[0]['title'] }}</p>
+                        @if (count($todaysMiqaats) > 1)
+                            <p class="text-xs text-white/60">{{ __('+:count more today', ['count' => count($todaysMiqaats) - 1]) }}</p>
+                        @endif
+                    </div>
+                </div>
+            @endif
 
             @if ($latestSession)
                 @php $pct = $latestSession->duty_assignments_count > 0 ? round(100 * $latestSession->present_count / $latestSession->duty_assignments_count) : 0; @endphp
@@ -109,42 +137,52 @@
                     </a>
                 @endif
 
-                <a href="{{ route('sessions.index') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" /></svg>
-                    </span>
-                    <span class="text-xs font-medium text-slate-600">{{ __('Sessions') }}</span>
-                </a>
+                @can('view_sessions')
+                    <a href="{{ route('sessions.index') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" /></svg>
+                        </span>
+                        <span class="text-xs font-medium text-slate-600">{{ __('Sessions') }}</span>
+                    </a>
+                @endcan
 
                 @if ($latestSession)
-                    <a href="{{ route('attendance.shell.list', $latestSession) }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
-                        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-violet-50 text-violet-600">
-                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" /></svg>
-                        </span>
-                        <span class="text-xs font-medium text-slate-600">{{ __('Attendance List') }}</span>
-                    </a>
+                    @can('view_attendance_history')
+                        <a href="{{ route('attendance.shell.list', $latestSession) }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                            <span class="flex h-9 w-9 items-center justify-center rounded-full bg-violet-50 text-violet-600">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" /></svg>
+                            </span>
+                            <span class="text-xs font-medium text-slate-600">{{ __('Attendance List') }}</span>
+                        </a>
+                    @endcan
                 @endif
 
-                <a href="{{ route('analytics.overview') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-orange-50 text-orange-500">
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4" /></svg>
-                    </span>
-                    <span class="text-xs font-medium text-slate-600">{{ __('Analytics') }}</span>
-                </a>
+                @can('view_analytics')
+                    <a href="{{ route('analytics.overview') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-orange-50 text-orange-500">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4" /></svg>
+                        </span>
+                        <span class="text-xs font-medium text-slate-600">{{ __('Analytics') }}</span>
+                    </a>
+                @endcan
 
-                <a href="{{ route('analytics.profile-search') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-8 8a6 6 0 0 0-6 6h20a6 6 0 0 0-6-6H8Z" /></svg>
-                    </span>
-                    <span class="text-xs font-medium text-slate-600">{{ __('Khidmatguzars') }}</span>
-                </a>
+                @can('view_directory')
+                    <a href="{{ route('analytics.profile-search') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-8 8a6 6 0 0 0-6 6h20a6 6 0 0 0-6-6H8Z" /></svg>
+                        </span>
+                        <span class="text-xs font-medium text-slate-600">{{ __('Khidmatguzars') }}</span>
+                    </a>
+                @endcan
 
-                <a href="{{ route('reports.index') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a1 1 0 0 0 1-1V9l-6-6H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1Z" /></svg>
-                    </span>
-                    <span class="text-xs font-medium text-slate-600">{{ __('Reports') }}</span>
-                </a>
+                @can('view_reports')
+                    <a href="{{ route('reports.index') }}" class="kg-card-hover flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-white p-3 text-center shadow-sm">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a1 1 0 0 0 1-1V9l-6-6H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1Z" /></svg>
+                        </span>
+                        <span class="text-xs font-medium text-slate-600">{{ __('Reports') }}</span>
+                    </a>
+                @endcan
             </div>
         </div>
 
@@ -169,6 +207,91 @@
                     @endforeach
                 </div>
             @endif
+        </div>
+    </div>
+
+    {{--
+        Merged Hijri + Gregorian calendar modal. One shared Alpine scope
+        (window custom events bridge it to the header button in the other
+        Blade slot). Month navigation is entirely client-side — the whole
+        ±6-month window is embedded once as JSON on page load, so paging
+        between months is a plain array index change, never a fetch/reload
+        (this project's architecture has no fetch/axios anywhere).
+    --}}
+    <div
+        x-data="{
+            open: false,
+            monthIndex: {{ $calendarAnchorIndex }},
+            anchorIndex: {{ $calendarAnchorIndex }},
+            months: {{ Js::from($calendarWindow) }},
+            selected: null,
+            get month() { return this.months[this.monthIndex]; },
+            weekdayLabels: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+            close() { this.open = false; this.selected = null; },
+        }"
+        x-on:open-calendar-modal.window="open = true; monthIndex = anchorIndex; selected = null"
+        x-on:keydown.escape.window="if (open) close()"
+        x-effect="document.body.style.overflow = open ? 'hidden' : ''"
+        x-cloak
+    >
+        <div x-show="open" x-transition.opacity class="fixed inset-0 z-50 bg-slate-900/50" x-on:click="close()" aria-hidden="true"></div>
+
+        <div x-show="open"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 translate-y-6 sm:translate-y-0 sm:scale-95"
+             x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+             x-transition:leave-end="opacity-0 translate-y-6 sm:translate-y-0 sm:scale-95"
+             class="fixed inset-x-0 bottom-0 z-50 max-h-[88vh] overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:inset-x-auto sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-full sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
+             role="dialog" aria-modal="true" aria-label="{{ __('Calendar') }}"
+             x-init="$watch('open', (v) => { if (v) $nextTick(() => $refs.closeBtn?.focus()); })">
+
+            <div class="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-200 sm:hidden"></div>
+
+            <div class="flex items-center justify-between">
+                <button type="button" x-on:click="monthIndex = Math.max(0, monthIndex - 1)" :disabled="monthIndex === 0"
+                        aria-label="{{ __('Previous month') }}" class="kg-tap flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-50 disabled:opacity-30">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m15 19-7-7 7-7" /></svg>
+                </button>
+                <p class="text-sm font-semibold text-slate-900" x-text="month.monthName + ' ' + month.year + 'H'"></p>
+                <button type="button" x-on:click="monthIndex = Math.min(months.length - 1, monthIndex + 1)" :disabled="monthIndex === months.length - 1"
+                        aria-label="{{ __('Next month') }}" class="kg-tap flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-50 disabled:opacity-30">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" /></svg>
+                </button>
+            </div>
+
+            <div class="mt-4 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <template x-for="label in weekdayLabels" :key="label"><span x-text="label"></span></template>
+            </div>
+
+            <div class="mt-1 grid grid-cols-7 gap-1">
+                <template x-for="(week, wi) in month.weeks" :key="wi">
+                    <template x-for="(cell, ci) in week" :key="ci">
+                        <button type="button"
+                                x-show="cell"
+                                x-on:click="cell && cell.miqaats.length ? (selected = cell) : null"
+                                :class="cell?.isToday ? 'bg-navy-900 text-white' : (cell?.miqaats?.length ? 'bg-violet-50 text-slate-900 hover:bg-violet-100' : 'text-slate-700 hover:bg-slate-50')"
+                                class="kg-tap flex aspect-square flex-col items-center justify-center rounded-xl text-xs">
+                            <span x-text="cell?.gregorian?.day" class="font-semibold leading-tight"></span>
+                            <span x-text="cell?.hijri?.day" class="text-[9px] leading-tight opacity-70"></span>
+                            <span x-show="cell?.miqaats?.length" class="mt-0.5 h-1 w-1 rounded-full" :class="cell?.isToday ? 'bg-white' : 'bg-violet-500'"></span>
+                        </button>
+                    </template>
+                </template>
+            </div>
+
+            <div x-show="selected" x-cloak class="mt-4 space-y-1.5 rounded-xl bg-violet-50 p-3">
+                <p class="text-xs font-semibold text-slate-500" x-text="selected ? (selected.gregorian.day + '/' + selected.gregorian.month + '/' + selected.gregorian.year + ' · ' + selected.hijri.day + ' ' + month.monthName) : ''"></p>
+                <template x-for="m in (selected?.miqaats ?? [])" :key="m.title">
+                    <p class="text-sm text-slate-800" x-text="m.title"></p>
+                </template>
+            </div>
+
+            <button type="button" x-ref="closeBtn" x-on:click="close()" aria-label="{{ __('Close') }}"
+                    class="kg-tap absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+            </button>
         </div>
     </div>
 </x-app-layout>

@@ -260,18 +260,23 @@ class AttendanceService
     }
 
     /**
-     * Rule 6: only Admin may reopen a Closed session, only for correction —
-     * this never resets status to draft/pending, it goes straight back to
+     * Rule 6: reopening a Closed session requires the reopen_sessions
+     * permission (Admin always has it; an Admin may also grant it to a
+     * specific Operator/Viewer without a new role) — only for correction.
+     * This never resets status to draft/pending, it goes straight back to
      * 'active' so the existing attendance state machine (and every existing
      * mutation guard) applies unchanged. The reason is mandatory and
      * recorded immutably; a correction made after reopening is just a
-     * normal AttendanceEvent, never a rewrite of the original one.
+     * normal AttendanceEvent, never a rewrite of the original one. The
+     * route itself is already gated by the same permission — this check is
+     * deliberate defense-in-depth, since this method is also callable
+     * directly by other code, not just the HTTP layer.
      *
      * @return array{result: string, session?: DutySession}
      */
     public function reopenSession(DutySession $session, User $actor, string $reason, ?string $detail = null): array
     {
-        if (! $actor->isAdmin()) {
+        if (! $actor->hasPermission('reopen_sessions')) {
             return ['result' => 'forbidden'];
         }
 

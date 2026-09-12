@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\DutySession;
 use App\Models\ImportBatch;
 use App\Services\DutyListImportService;
+use App\Services\EventPlanningService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -13,7 +14,22 @@ use Illuminate\View\View;
 
 class DutyListImportController extends Controller
 {
-    public function __construct(private readonly DutyListImportService $importer) {}
+    public function __construct(
+        private readonly DutyListImportService $importer,
+        private readonly EventPlanningService $planning,
+    ) {}
+
+    /**
+     * Import Center 2.0 dashboard: every import batch across every session,
+     * newest first. Read-only — reuses ImportBatch, no parallel audit store.
+     */
+    public function index(): View
+    {
+        $batches = ImportBatch::with(['dutySession.event', 'uploadedBy'])
+            ->latest('id')->paginate(20);
+
+        return view('imports.index', ['batches' => $batches]);
+    }
 
     public function create(DutySession $dutySession): View|RedirectResponse
     {
@@ -59,11 +75,16 @@ class DutyListImportController extends Controller
             'summary' => $preview,
         ], now()->addMinutes(30));
 
+        $planComparison = $dutySession->eventPlan
+            ? $this->planning->planVsIncoming($dutySession->eventPlan->departments ?? [], $preview['department_counts'])
+            : null;
+
         return view('imports.preview', [
             'dutySession' => $dutySession,
             'preview' => $preview,
             'token' => $token,
             'filename' => $file->getClientOriginalName(),
+            'planComparison' => $planComparison,
         ]);
     }
 

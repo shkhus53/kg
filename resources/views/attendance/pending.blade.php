@@ -80,20 +80,22 @@
                             </div>
                             <x-shell.badge tone="orange">{{ __('Pending') }}</x-shell.badge>
                         </div>
-                        <div class="mt-3 grid grid-cols-2 gap-2">
-                            <form method="POST" action="{{ route('attendance.present', $dutySession) }}">
-                                @csrf
-                                <input type="hidden" name="assignment_ids[]" value="{{ $assignment->id }}">
-                                <input type="hidden" name="return_to" value="pending">
-                                <button type="submit" class="w-full rounded-xl bg-emerald-600 py-2 text-xs font-semibold text-white hover:bg-emerald-700">{{ __('Present') }}</button>
-                            </form>
-                            <form method="POST" action="{{ route('attendance.absent', $dutySession) }}" onsubmit="return confirm('{{ __('Mark this person Absent?') }}')">
-                                @csrf
-                                <input type="hidden" name="assignment_id" value="{{ $assignment->id }}">
-                                <input type="hidden" name="return_to" value="pending">
-                                <button type="submit" class="w-full rounded-xl border border-red-200 py-2 text-xs font-semibold text-red-600">{{ __('Absent') }}</button>
-                            </form>
-                        </div>
+                        @can('mark_attendance')
+                            <div class="mt-3 grid grid-cols-2 gap-2">
+                                <form method="POST" action="{{ route('attendance.present', $dutySession) }}">
+                                    @csrf
+                                    <input type="hidden" name="assignment_ids[]" value="{{ $assignment->id }}">
+                                    <input type="hidden" name="return_to" value="pending">
+                                    <button type="submit" class="w-full rounded-xl bg-emerald-600 py-2 text-xs font-semibold text-white hover:bg-emerald-700">{{ __('Present') }}</button>
+                                </form>
+                                <form method="POST" action="{{ route('attendance.absent', $dutySession) }}" onsubmit="return confirm('{{ __('Mark this person Absent?') }}')">
+                                    @csrf
+                                    <input type="hidden" name="assignment_id" value="{{ $assignment->id }}">
+                                    <input type="hidden" name="return_to" value="pending">
+                                    <button type="submit" class="w-full rounded-xl border border-red-200 py-2 text-xs font-semibold text-red-600">{{ __('Absent') }}</button>
+                                </form>
+                            </div>
+                        @endcan
                     </div>
                 @endforeach
             </div>

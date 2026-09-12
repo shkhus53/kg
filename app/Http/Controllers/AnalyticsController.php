@@ -6,11 +6,17 @@ use App\Models\AttendanceEvent;
 use App\Models\Department;
 use App\Models\DutyAssignment;
 use App\Models\DutySession;
+use App\Models\EventPlan;
 use App\Models\ExtraPresent;
+use App\Models\ImportBatch;
 use App\Models\Khidmatguzar;
+use App\Models\SessionReopenEvent;
+use App\Services\EventPlanningService;
+use App\Services\OperationalAlertService;
 use App\Services\ReportService;
 use App\Support\Gender;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
@@ -22,7 +28,28 @@ use Illuminate\View\View;
  */
 class AnalyticsController extends Controller
 {
-    public function __construct(private readonly ReportService $reports) {}
+    /**
+     * Rows in {@link planningAnalysis()} with `planned == 0 && actual > 0`,
+     * or `actual` exceeding `planned` by more than this fraction, are
+     * flagged underplanned. 20% is a deliberately simple, documented
+     * threshold — not a statistical model.
+     */
+    private const UNDERPLANNED_GAP_THRESHOLD = 0.2;
+
+    /** ImportBatch invalid_rows/total_rows at or above this ratio is an exception, not a statistical anomaly model. */
+    private const HIGH_INVALID_IMPORT_RATIO = 0.2;
+
+    /** A department needs at least this many observed sessions in range before a pattern (not a one-off) is claimed. */
+    private const MIN_SESSIONS_FOR_PATTERN = 3;
+
+    /** A trend needs at least this many distinct dates with data before it is drawn — fewer than this is an incident list, not a trend. */
+    private const MIN_DATES_FOR_TREND = 5;
+
+    public function __construct(
+        private readonly ReportService $reports,
+        private readonly EventPlanningService $planning,
+        private readonly OperationalAlertService $alertsService,
+    ) {}
 
     public function overview(Request $request): View
     {
@@ -103,7 +130,37 @@ class AnalyticsController extends Controller
         // Compact top-departments list for the Overview tab.
         $departments = $this->departmentBreakdown($from, $to, $sessionId)->take(5);
 
+        [$utcStart, $utcEnd] = $this->operationalBoundsUtc($from, $to);
+
+        // Corrections: a 'present' AttendanceEvent with an earlier 'absent'
+        // event for the SAME assignment — the only correction path the
+        // state machine allows (see ReportService::operatorActivityReport()
+        // for the identical per-operator version of this same rule).
+        $corrections = AttendanceEvent::query()
+            ->from('attendance_events as ae')
+            ->where('ae.action', 'present')
+            ->whereBetween('ae.performed_at', [$utcStart, $utcEnd])
+            ->whereExists(function ($q) {
+                $q->selectRaw('1')->from('attendance_events as prior')
+                    ->whereColumn('prior.duty_assignment_id', 'ae.duty_assignment_id')
+                    ->where('prior.action', 'absent')
+                    ->whereColumn('prior.id', '<', 'ae.id');
+            })
+            ->count();
+
+        $reopenedSessions = SessionReopenEvent::whereBetween('reopened_at', [$utcStart, $utcEnd])
+            ->distinct('duty_session_id')->count('duty_session_id');
+
+        $importsCount = ImportBatch::whereBetween('created_at', [$utcStart, $utcEnd])->count();
+
+        $operatorsActive = AttendanceEvent::whereBetween('performed_at', [$utcStart, $utcEnd])
+            ->distinct('performed_by')->count('performed_by');
+
         return view('analytics.overview', [
+            'corrections' => $corrections,
+            'reopenedSessions' => $reopenedSessions,
+            'importsCount' => $importsCount,
+            'operatorsActive' => $operatorsActive,
             'from' => $from,
             'to' => $to,
             'departmentId' => $departmentId,
@@ -232,17 +289,15 @@ class AnalyticsController extends Controller
         $from = $request->query('from');
         $to = $request->query('to');
         $hasServed = $request->boolean('has_served');
+        $gender = $request->query('gender', 'all');
+        $genderBucket = in_array($gender, [Gender::MALE, Gender::FEMALE, Gender::UNKNOWN], true) ? $gender : null;
 
-        $khidmatguzars = Khidmatguzar::query()
-            ->selectRaw("
-                khidmatguzars.*,
-                (SELECT COUNT(*) FROM duty_assignments da WHERE da.khidmatguzar_id = khidmatguzars.id) as total_duties,
-                (SELECT COUNT(*) FROM duty_assignments da WHERE da.khidmatguzar_id = khidmatguzars.id AND da.current_status = 'present') as present_count,
-                (SELECT COUNT(*) FROM duty_assignments da WHERE da.khidmatguzar_id = khidmatguzars.id AND da.current_status = 'absent') as absent_count,
-                (SELECT COUNT(DISTINCT da.duty_session_id) FROM duty_assignments da WHERE da.khidmatguzar_id = khidmatguzars.id) as sessions_served,
-                (SELECT COUNT(*) FROM extra_presents ep WHERE ep.khidmatguzar_id = khidmatguzars.id) as extra_count,
-                (SELECT MAX(ds.date) FROM duty_assignments da2 JOIN duty_sessions ds ON ds.id = da2.duty_session_id WHERE da2.khidmatguzar_id = khidmatguzars.id) as last_duty_date
-            ")
+        // Every filter EXCEPT gender, so gender counts below reflect the
+        // current search/department/session/etc. scope but are not
+        // themselves narrowed by the gender filter being applied to the
+        // list — this is what lets "Total = Male + Female + Unknown" hold
+        // for whatever the other filters currently select.
+        $baseQuery = Khidmatguzar::query()
             ->when($query !== '' && mb_strlen($query) >= 2, function ($q) use ($query) {
                 $escaped = str_replace(['%', '_'], ['\\%', '\\_'], $query);
                 $q->where(fn ($qq) => $qq->where('its_id', 'like', "%{$query}%")->orWhere('full_name', 'like', "%{$escaped}%"));
@@ -264,7 +319,32 @@ class AnalyticsController extends Controller
             ->when($hasServed, fn ($q) => $q->whereExists(function ($sub) {
                 $sub->selectRaw('1')->from('duty_assignments')
                     ->whereColumn('duty_assignments.khidmatguzar_id', 'khidmatguzars.id');
-            }))
+            }));
+
+        // One aggregate query (GROUP BY the same Gender bucketing used
+        // everywhere else in the app) instead of loading rows into PHP —
+        // scoped to every active filter except gender itself.
+        $genderCounts = ['Male' => 0, 'Female' => 0, 'Unknown' => 0];
+        $genderRows = (clone $baseQuery)
+            ->selectRaw(Gender::caseSql('khidmatguzars.gender').' as bucket, COUNT(*) as total')
+            ->groupBy('bucket')
+            ->pluck('total', 'bucket');
+        foreach ($genderRows as $bucket => $total) {
+            $genderCounts[$bucket] = (int) $total;
+        }
+        $totalCount = array_sum($genderCounts);
+
+        $khidmatguzars = (clone $baseQuery)
+            ->selectRaw("
+                khidmatguzars.*,
+                (SELECT COUNT(*) FROM duty_assignments da WHERE da.khidmatguzar_id = khidmatguzars.id) as total_duties,
+                (SELECT COUNT(*) FROM duty_assignments da WHERE da.khidmatguzar_id = khidmatguzars.id AND da.current_status = 'present') as present_count,
+                (SELECT COUNT(*) FROM duty_assignments da WHERE da.khidmatguzar_id = khidmatguzars.id AND da.current_status = 'absent') as absent_count,
+                (SELECT COUNT(DISTINCT da.duty_session_id) FROM duty_assignments da WHERE da.khidmatguzar_id = khidmatguzars.id) as sessions_served,
+                (SELECT COUNT(*) FROM extra_presents ep WHERE ep.khidmatguzar_id = khidmatguzars.id) as extra_count,
+                (SELECT MAX(ds.date) FROM duty_assignments da2 JOIN duty_sessions ds ON ds.id = da2.duty_session_id WHERE da2.khidmatguzar_id = khidmatguzars.id) as last_duty_date
+            ")
+            ->when($genderBucket, fn ($q) => $q->whereRaw(Gender::caseSql('khidmatguzars.gender').' = ?', [$genderBucket]))
             ->orderBy('full_name')
             ->paginate(20)
             ->withQueryString();
@@ -284,6 +364,9 @@ class AnalyticsController extends Controller
             'from' => $from,
             'to' => $to,
             'hasServed' => $hasServed,
+            'gender' => $gender,
+            'genderCounts' => $genderCounts,
+            'totalCount' => $totalCount,
             'departmentOptions' => Department::orderBy('name')->get(['id', 'name']),
             'departmentName' => $departmentId ? Department::find($departmentId)?->name : null,
             'sessionName' => $sessionId ? DutySession::find($sessionId)?->name : null,
@@ -444,5 +527,328 @@ class AnalyticsController extends Controller
         }
 
         return [$from, $to];
+    }
+
+    /**
+     * The operator picks a From/To date in APP_OPERATIONAL_TIMEZONE terms
+     * ("the whole operational day"), but every timestamp column (as
+     * opposed to a DATE-only column like duty_sessions.date) is stored in
+     * UTC. Converting the boundary once, here, is what keeps every
+     * timestamp filter in this controller correct without re-deriving the
+     * Phase 9/9.1 timezone bug per callsite: midnight IST on $from is NOT
+     * midnight UTC, so a naive whereDate() on a timestamp column would
+     * silently clip or include the wrong rows near the day boundary.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function operationalBoundsUtc(string $from, string $to): array
+    {
+        $tz = config('app.operational_timezone');
+
+        return [
+            Carbon::createFromFormat('Y-m-d', $from, $tz)->startOfDay()->utc(),
+            Carbon::createFromFormat('Y-m-d', $to, $tz)->endOfDay()->utc(),
+        ];
+    }
+
+    /**
+     * Planning Performance (Phase 6): Forecast -> Plan -> Imported Duty
+     * List, per finalized EventPlan in range. Draft plans are excluded —
+     * they have no linked DutySession yet, so there is nothing "actual" to
+     * compare against. Never recomputes the forecast or the plan snapshot;
+     * `recommended`/`planned` come straight from EventPlan::$departments,
+     * `actual` comes from EventPlanningService::planVsActualByDepartment()
+     * (the same Phase 4/5 method sessions.show already uses) — one
+     * calculation, never duplicated.
+     *
+     * Planning Accuracy (documented formula, not a statistical model):
+     *   per department (planned > 0 only):
+     *     accuracy = 100 * (1 - |actual - planned| / planned), floored at 0
+     *   overall accuracy = accuracy values weighted by `planned`
+     * Departments with planned = 0 are excluded from the accuracy average
+     * — dividing by zero is undefined, not "0% accurate" — and are instead
+     * surfaced separately as underplanned/missing-from-plan.
+     *
+     * @return array<string,mixed>
+     */
+    private function planningAnalysis(string $from, string $to): array
+    {
+        $plans = EventPlan::with(['event', 'venue', 'dutySession'])
+            ->where('status', 'finalized')
+            ->whereNotNull('duty_session_id')
+            ->whereDate('planned_date', '>=', $from)
+            ->whereDate('planned_date', '<=', $to)
+            ->orderByDesc('planned_date')
+            ->get();
+
+        $departmentTotals = []; // keyed by department name: times flagged underplanned
+        $departmentObserved = []; // keyed by department name: sessions observed at all
+        $planRows = [];
+        $sumRecommended = 0;
+        $sumPlanned = 0;
+        $sumActual = 0;
+        $weightedAccuracySum = 0.0;
+        $accuracyWeight = 0;
+
+        foreach ($plans as $plan) {
+            $actualRows = $this->planning->planVsActualByDepartment($plan, $plan->dutySession);
+            $recommendedByName = collect($plan->departments ?? [])->keyBy('name');
+            $extraByDept = ExtraPresent::where('duty_session_id', $plan->duty_session_id)
+                ->selectRaw('department_id, COUNT(*) as extra_count')
+                ->groupBy('department_id')->pluck('extra_count', 'department_id');
+
+            $rows = [];
+            foreach ($actualRows as $row) {
+                $recommended = (int) ($recommendedByName->get($row['name'])['recommended'] ?? 0);
+                $extra = (int) ($extraByDept[$row['department_id']] ?? 0);
+                $underplanned = ($row['planned'] === 0 && $row['actual'] > 0)
+                    || ($row['planned'] > 0 && $row['actual'] > $row['planned'] * (1 + self::UNDERPLANNED_GAP_THRESHOLD));
+
+                $accuracy = null;
+                if ($row['planned'] > 0) {
+                    $accuracy = max(0.0, 100 * (1 - abs($row['actual'] - $row['planned']) / $row['planned']));
+                    $weightedAccuracySum += $accuracy * $row['planned'];
+                    $accuracyWeight += $row['planned'];
+                }
+
+                $rows[] = [...$row, 'recommended' => $recommended, 'extra' => $extra, 'underplanned' => $underplanned, 'accuracy' => $accuracy];
+
+                $sumRecommended += $recommended;
+                $sumPlanned += $row['planned'];
+                $sumActual += $row['actual'];
+
+                $departmentObserved[$row['name']] = ($departmentObserved[$row['name']] ?? 0) + 1;
+                if ($underplanned) {
+                    $departmentTotals[$row['name']] = ($departmentTotals[$row['name']] ?? 0) + 1;
+                }
+            }
+
+            $planRows[] = ['plan' => $plan, 'rows' => $rows];
+        }
+
+        $repeatedUnderplanned = collect($departmentTotals)
+            ->filter(fn ($count) => $count >= 2)
+            ->map(fn ($count, $name) => ['name' => $name, 'sessions' => $count])
+            ->sortByDesc('sessions')->values();
+
+        // Phase 7: department pattern intelligence — require a minimum
+        // number of OBSERVED sessions before calling anything a "pattern"
+        // (one bad session is an incident, not a pattern). No black-box
+        // score: the pattern label is a plain ratio of times-underplanned
+        // to sessions-observed, shown alongside both raw numbers.
+        $departmentPatterns = collect($departmentObserved)
+            ->filter(fn ($observed) => $observed >= self::MIN_SESSIONS_FOR_PATTERN)
+            ->map(function ($observed, $name) use ($departmentTotals) {
+                $underplannedCount = $departmentTotals[$name] ?? 0;
+
+                return [
+                    'name' => $name,
+                    'sessions_observed' => $observed,
+                    'times_underplanned' => $underplannedCount,
+                    'pattern' => $underplannedCount / $observed >= 0.5 ? 'persistently_underplanned' : 'stable',
+                ];
+            })
+            ->sortByDesc('times_underplanned')->values();
+
+        return [
+            'plans' => $planRows,
+            'sum_recommended' => $sumRecommended,
+            'sum_planned' => $sumPlanned,
+            'sum_actual' => $sumActual,
+            'overall_gap' => $sumActual - $sumPlanned,
+            'overall_accuracy' => $accuracyWeight > 0 ? round($weightedAccuracySum / $accuracyWeight, 1) : null,
+            'repeated_underplanned' => $repeatedUnderplanned,
+            'department_patterns' => $departmentPatterns,
+        ];
+    }
+
+    public function planning(Request $request): View
+    {
+        [$from, $to] = $this->resolveRange($request);
+
+        return view('analytics.planning', ['from' => $from, 'to' => $to] + $this->planningAnalysis($from, $to));
+    }
+
+    /**
+     * Phase 7: Operational Alert Center — dynamically computed, never
+     * persisted (see OperationalAlertService docblock for why). Every
+     * alert is deterministic, links to an existing detail page, and is
+     * grouped by severity for scanability.
+     */
+    public function alerts(Request $request): View
+    {
+        [$from, $to] = $this->resolveRange($request);
+        [$utcStart, $utcEnd] = $this->operationalBoundsUtc($from, $to);
+
+        $alerts = $this->alertsService->detect($from, $to, $utcStart, $utcEnd);
+
+        return view('analytics.alerts', [
+            'from' => $from,
+            'to' => $to,
+            'highAlerts' => collect($alerts)->where('severity', 'high')->values(),
+            'mediumAlerts' => collect($alerts)->where('severity', 'medium')->values(),
+        ]);
+    }
+
+    /**
+     * Phase 7: Management Summary — a concise, factual, date-scoped
+     * rollup. No "health score", no marketing language: every number here
+     * is one of the same already-tested aggregations used elsewhere
+     * (Overview, Planning, Exceptions/Alerts) and none are recomputed with
+     * different logic.
+     */
+    public function summary(Request $request): View
+    {
+        [$from, $to] = $this->resolveRange($request);
+
+        return view('analytics.summary', $this->reports->managementSummary($from, $to));
+    }
+
+    /**
+     * Exceptions (Phase 6): deterministic, explainable conditions only — no
+     * ML, no black-box scoring. Every row here traces to one plain-English
+     * reason and one existing query; nothing is inferred statistically.
+     */
+    public function exceptions(Request $request): View
+    {
+        [$from, $to] = $this->resolveRange($request);
+        [$utcStart, $utcEnd] = $this->operationalBoundsUtc($from, $to);
+
+        $pendingInActive = DutyAssignment::query()
+            ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
+            ->where('duty_sessions.status', 'active')
+            ->where('duty_assignments.current_status', 'pending')
+            ->count();
+
+        $planning = $this->planningAnalysis($from, $to);
+        $underplannedRows = collect($planning['plans'])
+            ->flatMap(fn ($p) => collect($p['rows'])->filter(fn ($r) => $r['underplanned'])
+                ->map(fn ($r) => [...$r, 'plan' => $p['plan']]))
+            ->values();
+
+        $highInvalidImports = ImportBatch::whereBetween('created_at', [$utcStart, $utcEnd])
+            ->where('total_rows', '>', 0)
+            ->get()
+            ->filter(fn ($b) => ($b->invalid_rows / $b->total_rows) >= self::HIGH_INVALID_IMPORT_RATIO)
+            ->values();
+
+        $repeatedReopens = SessionReopenEvent::whereBetween('reopened_at', [$utcStart, $utcEnd])
+            ->groupBy('duty_session_id')
+            ->havingRaw('COUNT(*) >= 2')
+            ->with('dutySession:id,name,date')
+            ->selectRaw('duty_session_id, COUNT(*) as reopen_count')
+            ->get();
+
+        // Unusually high Extra Present: >=5 in one session, or Extra
+        // Present at 30%+ of that session's Present count — whichever
+        // threshold is met, both documented, neither a statistical model.
+        $extraBySession = ExtraPresent::query()
+            ->join('duty_sessions', 'duty_sessions.id', '=', 'extra_presents.duty_session_id')
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
+            ->groupBy('duty_sessions.id', 'duty_sessions.name', 'duty_sessions.date')
+            ->selectRaw('duty_sessions.id as session_id, duty_sessions.name as session_name, duty_sessions.date as session_date, COUNT(*) as extra_count')
+            ->get();
+
+        $presentBySession = DutyAssignment::query()
+            ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
+            ->where('duty_assignments.current_status', 'present')
+            ->groupBy('duty_sessions.id')
+            ->selectRaw('duty_sessions.id as session_id, COUNT(*) as present_count')
+            ->pluck('present_count', 'session_id');
+
+        $highExtraPresentSessions = $extraBySession->filter(function ($row) use ($presentBySession) {
+            $present = (int) ($presentBySession[$row->session_id] ?? 0);
+
+            return $row->extra_count >= 5 || ($present > 0 && $row->extra_count / $present >= 0.3);
+        })->values();
+
+        return view('analytics.exceptions', [
+            'from' => $from,
+            'to' => $to,
+            'pendingInActive' => $pendingInActive,
+            'underplannedRows' => $underplannedRows,
+            'highInvalidImports' => $highInvalidImports,
+            'repeatedReopens' => $repeatedReopens,
+            'highExtraPresentSessions' => $highExtraPresentSessions,
+        ]);
+    }
+
+    /**
+     * Phase 7: operational trends. Every metric here is a DAILY AGGREGATE
+     * — e.g. "daily attendance rate" means SUM(Present) ÷ SUM(Scheduled)
+     * for all sessions on that day, never the average of each session's
+     * own percentage (averaging percentages would let one tiny session
+     * distort a day dominated by a much bigger one). No definition here
+     * differs from Overview/Planning/Summary — the underlying SQL grouping
+     * is the only thing that changes (by date instead of by session).
+     *
+     * A series only renders once it has at least
+     * self::MIN_DATES_FOR_TREND distinct dates with data in range —
+     * below that it is an incident list, not a trend, and showing a chart
+     * would imply a pattern the data does not support. Each of the four
+     * series (attendance, Extra Present, planning, session volume) is
+     * checked independently, since one can have enough history while
+     * another (e.g. planning, which requires a finalized EventPlan) does
+     * not yet.
+     */
+    public function trends(Request $request): View
+    {
+        [$from, $to] = $this->resolveRange($request);
+
+        $attendanceByDate = DutyAssignment::query()
+            ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
+            ->groupBy('duty_sessions.date')
+            ->orderBy('duty_sessions.date')
+            ->selectRaw("duty_sessions.date, COUNT(*) as scheduled, SUM(current_status = 'present') as present")
+            ->get()
+            ->map(fn ($row) => ['date' => $row->date, 'scheduled' => (int) $row->scheduled, 'present' => (int) $row->present, 'rate' => $row->scheduled > 0 ? round(100 * $row->present / $row->scheduled, 1) : 0]);
+
+        $extraByDate = ExtraPresent::query()
+            ->join('duty_sessions', 'duty_sessions.id', '=', 'extra_presents.duty_session_id')
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
+            ->groupBy('duty_sessions.date')
+            ->orderBy('duty_sessions.date')
+            ->selectRaw('duty_sessions.date, COUNT(*) as extra')
+            ->get()
+            ->map(fn ($row) => ['date' => $row->date, 'extra' => (int) $row->extra]);
+
+        $sessionVolumeByDate = DutySession::query()
+            ->whereDate('date', '>=', $from)->whereDate('date', '<=', $to)
+            ->groupBy('date')->orderBy('date')
+            ->selectRaw('date, COUNT(*) as sessions')
+            ->get()
+            ->map(fn ($row) => ['date' => $row->date, 'sessions' => (int) $row->sessions]);
+
+        $plans = EventPlan::with(['dutySession'])
+            ->where('status', 'finalized')->whereNotNull('duty_session_id')
+            ->whereDate('planned_date', '>=', $from)->whereDate('planned_date', '<=', $to)
+            ->get();
+
+        $planningByDate = [];
+        foreach ($plans as $plan) {
+            $date = $plan->planned_date->toDateString();
+            $rows = $this->planning->planVsActualByDepartment($plan, $plan->dutySession);
+            $planningByDate[$date]['planned'] = ($planningByDate[$date]['planned'] ?? 0) + array_sum(array_column($rows, 'planned'));
+            $planningByDate[$date]['actual'] = ($planningByDate[$date]['actual'] ?? 0) + array_sum(array_column($rows, 'actual'));
+        }
+        $planningTrend = collect($planningByDate)->map(fn ($v, $date) => ['date' => $date, 'planned' => $v['planned'], 'actual' => $v['actual'], 'gap' => $v['actual'] - $v['planned']])
+            ->sortBy('date')->values();
+
+        return view('analytics.trends', [
+            'from' => $from,
+            'to' => $to,
+            'minDates' => self::MIN_DATES_FOR_TREND,
+            'attendanceByDate' => $attendanceByDate,
+            'attendanceSufficient' => $attendanceByDate->count() >= self::MIN_DATES_FOR_TREND,
+            'extraByDate' => $extraByDate,
+            'extraSufficient' => $extraByDate->count() >= self::MIN_DATES_FOR_TREND,
+            'sessionVolumeByDate' => $sessionVolumeByDate,
+            'sessionVolumeSufficient' => $sessionVolumeByDate->count() >= self::MIN_DATES_FOR_TREND,
+            'planningTrend' => $planningTrend,
+            'planningSufficient' => $planningTrend->count() >= self::MIN_DATES_FOR_TREND,
+        ]);
     }
 }

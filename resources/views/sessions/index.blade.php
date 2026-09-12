@@ -2,11 +2,18 @@
     <x-slot name="header">
         <x-shell.page-header title="Duty Sessions">
             <x-slot:actions>
-                @if (auth()->user()->canManageSessions())
-                    <a href="{{ route('sessions.create') }}" class="flex h-8 w-8 items-center justify-center rounded-full bg-white/10">
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-                    </a>
-                @endif
+                <div class="flex items-center gap-2">
+                    @can('view_planning')
+                        <a href="{{ route('planning.index') }}" aria-label="{{ __('Event Planning') }}" class="flex h-8 w-8 items-center justify-center rounded-full bg-white/10">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4" /></svg>
+                        </a>
+                    @endcan
+                    @if (auth()->user()->canManageSessions())
+                        <a href="{{ route('sessions.create') }}" aria-label="{{ __('Create Session') }}" class="flex h-8 w-8 items-center justify-center rounded-full bg-white/10">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                        </a>
+                    @endif
+                </div>
             </x-slot:actions>
         </x-shell.page-header>
     </x-slot>
@@ -49,7 +56,11 @@
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0">
                                 <p class="truncate font-medium text-slate-900">{{ $session->name }}</p>
-                                <p class="text-xs text-slate-400">{{ $session->date->format('d M Y') }} &middot; {{ __('created') }} {{ $session->created_at->toIst()->format('d M Y') }}</p>
+                                <p class="truncate text-xs text-slate-400">
+                                    {{ $session->date->format('d M Y') }}
+                                    @if ($session->venue) &middot; {{ $session->venue->name }} @endif
+                                    &middot; {{ __('created') }} {{ $session->created_at->toIst()->format('d M Y') }}
+                                </p>
                             </div>
                             <x-shell.badge :tone="$session->statusTone()" :dot="$isActive">{{ $session->status }}</x-shell.badge>
                         </div>

@@ -49,6 +49,8 @@
                         <option value="absent" @selected($filters['action'] === 'absent')>{{ __('Absent') }}</option>
                         <option value="session_reopened" @selected($filters['action'] === 'session_reopened')>{{ __('Session Reopened') }}</option>
                         <option value="sync_issue" @selected($filters['action'] === 'sync_issue')>{{ __('Offline Sync Issue') }}</option>
+                        <option value="import" @selected($filters['action'] === 'import')>{{ __('Import') }}</option>
+                        <option value="master_data_change" @selected($filters['action'] === 'master_data_change')>{{ __('Master Data Change') }}</option>
                     </select>
                 </div>
 
@@ -80,6 +82,8 @@
                     'absent' => ['tone' => 'red', 'bg' => 'bg-red-50', 'ring' => 'ring-red-100', 'text' => 'text-red-600', 'icon' => 'M6 18L18 6M6 6l12 12'],
                     'session_reopened' => ['tone' => 'orange', 'bg' => 'bg-orange-50', 'ring' => 'ring-orange-100', 'text' => 'text-orange-600', 'icon' => 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'],
                     'sync_issue' => ['tone' => 'purple', 'bg' => 'bg-violet-50', 'ring' => 'ring-violet-100', 'text' => 'text-violet-600', 'icon' => 'M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-8.25 3.75h.008v.008h-.008v-.008z'],
+                    'import' => ['tone' => 'blue', 'bg' => 'bg-blue-50', 'ring' => 'ring-blue-100', 'text' => 'text-blue-600', 'icon' => 'M7 16a4 4 0 01-.88-7.9A5.5 5.5 0 0117 8a4.5 4.5 0 01.5 9H7Zm5-4v6m0-6l-2.5 2.5'],
+                    'master_data_change' => ['tone' => 'gray', 'bg' => 'bg-slate-100', 'ring' => 'ring-slate-200', 'text' => 'text-slate-600', 'icon' => 'M3 21h18M5 21V7l8-4 8 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1'],
                 ];
                 $defaultVisual = ['tone' => 'gray', 'bg' => 'bg-slate-50', 'ring' => 'ring-slate-100', 'text' => 'text-slate-500', 'icon' => 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'];
             @endphp

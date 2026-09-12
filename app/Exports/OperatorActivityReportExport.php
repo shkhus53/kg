@@ -25,7 +25,7 @@ class OperatorActivityReportExport implements WithMultipleSheets
             $row['absent_count'],
             $row['corrections_count'],
             $row['extra_count'],
-            $row['last_activity'] ? Carbon::parse($row['last_activity'])->format('d M Y H:i') : null,
+            $row['last_activity'] ? Carbon::parse($row['last_activity'])->toIst()->format('d M Y H:i') : null,
         ])->all();
 
         $sheet = new ArraySheet(

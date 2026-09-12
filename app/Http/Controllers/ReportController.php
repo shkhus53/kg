@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\AttendanceDetailReportExport;
 use App\Exports\DepartmentDetailReportExport;
 use App\Exports\DepartmentReportExport;
 use App\Exports\KhidmatguzarReportExport;
+use App\Exports\ManagementSummaryReportExport;
 use App\Exports\OperatorActivityReportExport;
 use App\Exports\SessionAttendanceExport;
 use App\Models\Department;
 use App\Models\DutySession;
 use App\Models\Khidmatguzar;
+use App\Models\User;
 use App\Services\ReportService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -159,6 +162,89 @@ class ReportController extends Controller
         $filename = 'operator-activity-'.$this->reports->safeFilenamePart($from.'-to-'.$to).'.xlsx';
 
         return Excel::download(new OperatorActivityReportExport($data), $filename);
+    }
+
+    /**
+     * Phase 7 Report Builder — Attendance Detail. Deliberately the only
+     * fully-implemented report type here (per the "don't build a giant
+     * generic BI system" instruction): Department Performance, Operator
+     * Activity, Planning vs Actual, and Import Quality are already each a
+     * dedicated, tested page (Analytics Departments/Operators/Planning,
+     * Import Center) — the builder links into those with the same filter
+     * values carried over rather than recalculating them a second way.
+     */
+    public function builder(Request $request): View
+    {
+        $filters = $this->resolveBuilderFilters($request);
+
+        $results = $this->reports->attendanceDetailQuery($filters)->paginate(25)->withQueryString();
+        $totals = $this->reports->attendanceDetailTotals($filters);
+
+        return view('reports.builder', [
+            'filters' => $filters,
+            'results' => $results,
+            'totals' => $totals,
+            'sessionOptions' => DutySession::orderByDesc('date')->get(['id', 'name', 'date']),
+            'departmentOptions' => Department::orderBy('name')->get(['id', 'name']),
+            'operatorOptions' => User::whereIn('role', ['admin', 'operator'])->orderBy('name')->get(['id', 'name']),
+        ]);
+    }
+
+    public function builderPdf(Request $request): Response
+    {
+        $filters = $this->resolveBuilderFilters($request);
+        $rows = $this->reports->attendanceDetailQuery($filters)->get();
+        $totals = $this->reports->attendanceDetailTotals($filters);
+
+        $pdf = Pdf::loadView('reports.pdf.attendance-detail', ['rows' => $rows, 'totals' => $totals, 'filters' => $filters])->setPaper('a4', 'landscape');
+
+        return $pdf->download('attendance-detail-'.$this->reports->safeFilenamePart(($filters['from'] ?? 'all').'-to-'.($filters['to'] ?? 'all')).'.pdf');
+    }
+
+    public function builderExcel(Request $request): BinaryFileResponse
+    {
+        $filters = $this->resolveBuilderFilters($request);
+        $rows = $this->reports->attendanceDetailQuery($filters)->get();
+        $totals = $this->reports->attendanceDetailTotals($filters);
+
+        $filename = 'attendance-detail-'.$this->reports->safeFilenamePart(($filters['from'] ?? 'all').'-to-'.($filters['to'] ?? 'all')).'.xlsx';
+
+        return Excel::download(new AttendanceDetailReportExport($rows, $totals, $filters), $filename);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function resolveBuilderFilters(Request $request): array
+    {
+        return array_filter([
+            'from' => $request->query('from'),
+            'to' => $request->query('to'),
+            'session_id' => $request->query('session_id'),
+            'department_id' => $request->query('department_id'),
+            'operator_id' => $request->query('operator_id'),
+            'status' => $request->query('status'),
+        ]);
+    }
+
+    public function managementSummaryPdf(Request $request): Response
+    {
+        [$from, $to] = $this->resolveDateRange($request);
+        $data = $this->reports->managementSummary($from, $to);
+        $pdf = Pdf::loadView('reports.pdf.management-summary', $data)->setPaper('a4', 'portrait');
+
+        $filename = 'management-summary-'.$this->reports->safeFilenamePart($from.'-to-'.$to).'.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    public function managementSummaryExcel(Request $request): BinaryFileResponse
+    {
+        [$from, $to] = $this->resolveDateRange($request);
+        $data = $this->reports->managementSummary($from, $to);
+        $filename = 'management-summary-'.$this->reports->safeFilenamePart($from.'-to-'.$to).'.xlsx';
+
+        return Excel::download(new ManagementSummaryReportExport($data), $filename);
     }
 
     /**

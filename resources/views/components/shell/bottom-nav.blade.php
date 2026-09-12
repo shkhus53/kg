@@ -20,7 +20,7 @@
             <span class="text-[10px] font-medium">{{ __('Sessions') }}</span>
         </a>
 
-        @if (auth()->user()->canManageSessions())
+        @can('view_live_attendance')
             <a href="{{ route('attendance.shell.live-redirect') }}" class="flex flex-col items-center" aria-label="{{ __('Live Attendance') }}">
                 <span class="-mt-7 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30">
                     <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -38,14 +38,16 @@
                     </svg>
                 </span>
             </div>
-        @endif
+        @endcan
 
-        <a href="{{ route('reports.index') }}" class="flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 {{ request()->routeIs('reports.*') ? 'text-navy-900' : 'text-slate-400' }}">
-            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4M5 21h14a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1Z" />
-            </svg>
-            <span class="text-[10px] font-medium">{{ __('Reports') }}</span>
-        </a>
+        @can('view_reports')
+            <a href="{{ route('reports.index') }}" class="flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 {{ request()->routeIs('reports.*') ? 'text-navy-900' : 'text-slate-400' }}">
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4M5 21h14a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1Z" />
+                </svg>
+                <span class="text-[10px] font-medium">{{ __('Reports') }}</span>
+            </a>
+        @endcan
 
         <div x-data="{ open: false }" class="relative flex flex-col items-center" @keyup.escape="open = false">
             <button type="button" @click="open = !open" @click.outside="open = false"
@@ -60,14 +62,24 @@
 
             <div x-show="open" x-cloak x-transition @click="open = false"
                  class="absolute bottom-14 right-0 z-50 w-44 rounded-xl border border-slate-100 bg-white p-1.5 text-slate-700 shadow-lg">
-                <a href="{{ route('analytics.overview') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
-                    <svg class="h-4 w-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4" /></svg>
-                    {{ __('Analytics') }}
-                </a>
-                <a href="{{ route('analytics.profile-search') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
-                    <svg class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-8 8a6 6 0 0 0-6 6h20a6 6 0 0 0-6-6H8Z" /></svg>
-                    {{ __('Khidmatguzars') }}
-                </a>
+                @can('import_duty_list')
+                    <a href="{{ route('imports.index') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
+                        <svg class="h-4 w-4 text-navy-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 0 1-.88-7.9A5.5 5.5 0 0 1 17 8a4.5 4.5 0 0 1 .5 9H7Zm5-4v6m0-6-2.5 2.5" /></svg>
+                        {{ __('Import Center') }}
+                    </a>
+                @endcan
+                @can('view_analytics')
+                    <a href="{{ route('analytics.overview') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
+                        <svg class="h-4 w-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4" /></svg>
+                        {{ __('Analytics') }}
+                    </a>
+                @endcan
+                @can('view_directory')
+                    <a href="{{ route('analytics.profile-search') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
+                        <svg class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-8 8a6 6 0 0 0-6 6h20a6 6 0 0 0-6-6H8Z" /></svg>
+                        {{ __('Khidmatguzars') }}
+                    </a>
+                @endcan
                 @can('view_audit_log')
                     <a href="{{ route('audit.index') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
                         <svg class="h-4 w-4 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l4.414 4.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z" /></svg>
@@ -76,6 +88,18 @@
                     <a href="{{ route('analytics.operators') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
                         <svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-8 8a6 6 0 0 0-6 6h20a6 6 0 0 0-6-6H8Z" /></svg>
                         {{ __('Operator Analytics') }}
+                    </a>
+                @endcan
+                @can('manage_masters')
+                    <a href="{{ route('masters.index') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
+                        <svg class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V7l8-4 8 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1" /></svg>
+                        {{ __('Master Data') }}
+                    </a>
+                @endcan
+                @can('manage_users')
+                    <a href="{{ route('users.index') }}" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-50">
+                        <svg class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-8 8a6 6 0 0 0-6 6h20a6 6 0 0 0-6-6H8Z" /></svg>
+                        {{ __('User Management') }}
                     </a>
                 @endcan
             </div>

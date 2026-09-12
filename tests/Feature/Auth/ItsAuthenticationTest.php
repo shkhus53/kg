@@ -142,7 +142,12 @@ class ItsAuthenticationTest extends TestCase
         $operator = User::factory()->operator()->create(['its_number' => '40000002']);
         $admin = User::factory()->admin()->create(['its_number' => '40000003']);
 
-        $this->assertTrue($operator->canManageSessions());
+        // Session lifecycle (create/activate/close) became Admin-only by
+        // default under the granular permission system — an Operator no
+        // longer manages sessions unless an Admin explicitly grants it
+        // (create_sessions/activate_sessions/close_sessions). Admin is
+        // always unrestricted regardless.
+        $this->assertFalse($operator->canManageSessions());
         $this->assertTrue($admin->canManageSessions());
     }
 

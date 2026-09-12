@@ -93,7 +93,7 @@ class DutyListImportService
             $data = [];
             foreach (self::COLUMN_MAP as $field => $header) {
                 $index = $columnIndex[$this->normalizeHeader($header)] ?? null;
-                $data[$field] = $index !== null ? trim((string) ($cells[$index] ?? '')) : null;
+                $data[$field] = $index !== null ? $this->sanitizeCell(trim((string) ($cells[$index] ?? ''))) : null;
             }
 
             // +2: array is zero-indexed after the header row was shifted off,
@@ -102,6 +102,29 @@ class DutyListImportService
         }
 
         return ['headers' => array_map('strval', $headerRow), 'missingColumns' => [], 'rows' => $rows];
+    }
+
+    /**
+     * Formula-injection hardening at ingestion. A cell whose first
+     * character is one Excel/Sheets treats as a formula prefix (=, +, -, @)
+     * is neutralized with a leading apostrophe — the same industry-standard
+     * marker spreadsheet applications themselves use to force text — rather
+     * than stripped, so no legitimate character of the original value is
+     * lost. None of the imported fields (ITS ID, names, venue/block/day
+     * labels, seat, remarks) are ever legitimately negative numbers or
+     * formulas in this domain, so this applies uniformly without needing
+     * per-field carve-outs. Mirrors the same risk check already used on the
+     * export side (see ArraySheet::isFormulaInjectionRisk) so a value that
+     * slips past this stays safe if it is ever exported through a path
+     * other than ArraySheet.
+     */
+    private function sanitizeCell(string $value): string
+    {
+        if ($value !== '' && in_array($value[0], ['=', '+', '-', '@'], true)) {
+            return "'".$value;
+        }
+
+        return $value;
     }
 
     /**
@@ -243,6 +266,31 @@ class DutyListImportService
             ->unique()
             ->filter(fn ($key) => $existingDeptKeys->has($key));
 
+        // Import Center 2.0: per-department tally of NEW assignments this
+        // file will create (for the Plan vs Import comparison), and an
+        // explicit call-out of any ITS spread across 2+ departments in this
+        // same file — informational only, never treated as a duplicate.
+        // Same ITS + different department = a separate, valid assignment.
+        $departmentCounts = [];
+        $itsDepartments = [];
+        foreach ($withinFileValid as $row) {
+            $deptName = $row['data']['venue_name'];
+            $departmentCounts[$deptName] = ($departmentCounts[$deptName] ?? 0) + 1;
+            $itsDepartments[$row['data']['its_id']]['name'] = $existingKhidmatguzars->get($row['data']['its_id'])?->full_name ?? $row['data']['full_name'];
+            $itsDepartments[$row['data']['its_id']]['departments'][$deptName] = true;
+        }
+
+        $multiDepartmentIts = [];
+        foreach ($itsDepartments as $its => $info) {
+            if (count($info['departments']) >= 2) {
+                $multiDepartmentIts[] = [
+                    'its_id' => $its,
+                    'name' => $info['name'],
+                    'departments' => array_keys($info['departments']),
+                ];
+            }
+        }
+
         return [
             'total_rows' => count($rows),
             'valid_rows' => count($withinFileValid),
@@ -257,6 +305,8 @@ class DutyListImportService
             'changed_khidmatguzars' => $changedKhidmatguzars,
             'new_departments' => $newDeptKeys->count(),
             'existing_departments' => $existingDeptKeysUsed->count(),
+            'department_counts' => $departmentCounts,
+            'multi_department_its' => $multiDepartmentIts,
             'valid' => $withinFileValid,
         ];
     }

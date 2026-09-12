@@ -42,4 +42,17 @@ class ImportBatch extends Model
     {
         return $this->hasMany(KhidmatguzarChangeLog::class, 'import_batch_id');
     }
+
+    /**
+     * Import Center 2.0 status label. commit() is atomic (a transaction
+     * failure throws and no batch row is ever persisted), so there is no
+     * "Failed" batch to represent here — only whether everything imported
+     * cleanly or some rows were skipped as invalid/duplicate.
+     */
+    public function displayStatus(): string
+    {
+        $skipped = $this->invalid_rows + $this->exact_duplicate_rows + $this->cross_batch_duplicate_rows;
+
+        return $skipped > 0 ? 'Imported with Warnings' : 'Imported';
+    }
 }

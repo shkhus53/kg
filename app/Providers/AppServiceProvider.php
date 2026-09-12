@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\PermissionRegistry;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -19,16 +20,17 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Bootstrap any application services.
      *
-     * Defines one Gate per entry in config/permissions.php, so routes use
-     * `can:<permission>` instead of hardcoded role names. Role behavior is
-     * unchanged from before this refactor — only the enforcement mechanism
-     * moved, to make future department-scoped permissions addable without
-     * touching every route.
+     * Defines one Gate per permission in PermissionRegistry::all(), so
+     * routes use `can:<permission>`. Each Gate simply delegates to
+     * User::hasPermission(), which is where the actual role-default ->
+     * user-override -> admin-always-allowed precedence lives — the Gate
+     * layer itself carries no authorization logic of its own, so there is
+     * exactly one place that logic can ever diverge.
      */
     public function boot(): void
     {
-        foreach (config('permissions', []) as $permission => $roles) {
-            Gate::define($permission, fn ($user) => in_array($user->role, $roles, true));
+        foreach (PermissionRegistry::all() as $permission) {
+            Gate::define($permission, fn ($user) => $user->hasPermission($permission));
         }
 
         // Single canonical place a stored (UTC) timestamp is converted for

@@ -62,9 +62,11 @@
                                 'count' => $attention['count'], 'conflict' => $attention['conflict'], 'rejected' => $attention['rejected'], 'mismatch' => $attention['operator_mismatch'],
                             ]) }}
                         </p>
-                        <a href="{{ route('audit.index', ['session_id' => $dutySession->id, 'action' => 'sync_issue']) }}" class="mt-1 inline-block text-xs font-semibold text-orange-700 underline">
-                            {{ __('Review in Audit Log') }}
-                        </a>
+                        @can('view_audit_log')
+                            <a href="{{ route('audit.index', ['session_id' => $dutySession->id, 'action' => 'sync_issue']) }}" class="mt-1 inline-block text-xs font-semibold text-orange-700 underline">
+                                {{ __('Review in Audit Log') }}
+                            </a>
+                        @endcan
                     </div>
                 </div>
             </x-shell.card>

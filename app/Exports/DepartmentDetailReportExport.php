@@ -74,7 +74,7 @@ class DepartmentDetailReportExport implements WithMultipleSheets
                     $a->seat,
                     $a->day_alias ?: $a->day,
                     ucfirst($a->current_status),
-                    $a->attendance_marked_at?->format('d M Y H:i'),
+                    $a->attendance_marked_at?->toIst()->format('d M Y H:i'),
                 ];
             }
         }
@@ -97,7 +97,7 @@ class DepartmentDetailReportExport implements WithMultipleSheets
                     $e->full_name_snapshot,
                     $e->its_id_snapshot,
                     $section['department']->name,
-                    $e->marked_at->format('d M Y H:i'),
+                    $e->marked_at->toIst()->format('d M Y H:i'),
                     $e->markedBy?->name,
                     $e->remark,
                 ];

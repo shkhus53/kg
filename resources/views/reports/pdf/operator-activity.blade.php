@@ -35,7 +35,7 @@
             <td class="num">{{ $row['absent_count'] }}</td>
             <td class="num">{{ $row['corrections_count'] }}</td>
             <td class="num">{{ $row['extra_count'] }}</td>
-            <td>{{ $row['last_activity'] ? \Carbon\Carbon::parse($row['last_activity'])->format('d M Y H:i') : '—' }}</td>
+            <td>{{ $row['last_activity'] ? \Carbon\Carbon::parse($row['last_activity'])->toIst()->format('d M Y H:i') : '—' }}</td>
         </tr>
         @empty
         <tr><td colspan="8">No attendance activity in this period.</td></tr>

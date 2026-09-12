@@ -7,8 +7,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['name', 'date', 'h_year', 'miqaat', 'remarks', 'status', 'closed_at', 'closed_by', 'is_reopened_for_correction', 'reopened_at', 'reopened_by'])]
+#[Fillable(['name', 'date', 'h_year', 'miqaat', 'remarks', 'status', 'closed_at', 'closed_by', 'is_reopened_for_correction', 'reopened_at', 'reopened_by', 'miqaat_id', 'event_id', 'venue_id'])]
 class DutySession extends Model
 {
     use HasFactory;
@@ -51,6 +52,37 @@ class DutySession extends Model
     public function reopenEvents(): HasMany
     {
         return $this->hasMany(SessionReopenEvent::class);
+    }
+
+    public function miqaatRef(): BelongsTo
+    {
+        return $this->belongsTo(Miqaat::class, 'miqaat_id');
+    }
+
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    public function venue(): BelongsTo
+    {
+        return $this->belongsTo(Venue::class);
+    }
+
+    public function eventPlan(): HasOne
+    {
+        return $this->hasOne(EventPlan::class);
+    }
+
+    /**
+     * True only for a session created through the Phase 2 structured flow
+     * (Miqaat → Event → Venue). A "legacy" session — created before this
+     * phase, or via the free-text fallback — has none of these and is a
+     * permanently valid state, never backfilled or fabricated.
+     */
+    public function hasStructuredIdentity(): bool
+    {
+        return $this->miqaat_id !== null && $this->event_id !== null && $this->venue_id !== null;
     }
 
     public function isActive(): bool

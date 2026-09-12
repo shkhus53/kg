@@ -15,6 +15,40 @@
             <div class="rounded-2xl bg-red-50 p-4 text-sm text-red-700">{{ session('status_error') }}</div>
         @endif
 
+        @if ($dutySession->eventPlan)
+            @php $plan = $dutySession->eventPlan; @endphp
+            <x-shell.card>
+                <h3 class="mb-2 text-sm font-semibold text-slate-700">{{ __('Plan vs Actual') }}</h3>
+                <div class="grid grid-cols-3 gap-3 text-center text-sm">
+                    <div><p class="text-lg font-semibold tabular-nums text-slate-900">{{ $plan->recommended_total }}</p><p class="text-xs text-slate-400">{{ __('Recommended') }}</p></div>
+                    <div><p class="text-lg font-semibold tabular-nums text-violet-600">{{ $plan->planned_total }}</p><p class="text-xs text-slate-400">{{ __('Planned') }}</p></div>
+                    <div><p class="text-lg font-semibold tabular-nums text-slate-900">{{ array_sum(array_column($planVsActual, 'actual')) }}</p><p class="text-xs text-slate-400">{{ __('Actual Assigned') }}</p></div>
+                </div>
+
+                @if (! empty($planVsActual))
+                    <div class="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                        @foreach ($planVsActual as $row)
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="truncate text-slate-600">{{ $row['name'] }}</span>
+                                <span class="tabular-nums text-slate-400">
+                                    {{ __('Planned') }} {{ $row['planned'] }} &middot; {{ __('Actual') }} {{ $row['actual'] }}
+                                    <span class="font-semibold {{ $row['gap'] < 0 ? 'text-orange-600' : ($row['gap'] > 0 ? 'text-blue-600' : 'text-emerald-600') }}">
+                                        ({{ $row['gap'] >= 0 ? '+' : '' }}{{ $row['gap'] }})
+                                    </span>
+                                </span>
+                            </div>
+                        @endforeach
+                    </div>
+                @else
+                    <p class="mt-2 text-center text-xs text-slate-400">{{ __('No duty list imported yet — Actual will populate department-by-department once assignments are uploaded.') }}</p>
+                @endif
+
+                @can('view_planning')
+                    <p class="mt-2 text-center"><a href="{{ route('planning.show', $plan) }}" class="text-xs font-semibold text-blue-600">{{ __('View full plan') }}</a></p>
+                @endcan
+            </x-shell.card>
+        @endif
+
         @if ($dutySession->status === 'draft' && auth()->user()->canManageSessions())
             <x-shell.info-card>
                 {{ __('This session is in Draft. Attendance marking is disabled until it is activated.') }}
@@ -32,10 +66,10 @@
                 @if ($dutySession->closedBy) &middot; {{ $dutySession->closedBy->name }} @endif
             </x-shell.info-card>
 
-            @if (auth()->user()->isAdmin())
+            @can('reopen_sessions')
                 <x-shell.card x-data="{ reason: '' }">
                     <h3 class="mb-2 text-sm font-semibold text-slate-700">{{ __('Reopen for Correction') }}</h3>
-                    <p class="mb-3 text-xs text-slate-400">{{ __('Admin only. Reopening does not reset attendance already marked — it unlocks correction and is fully audited.') }}</p>
+                    <p class="mb-3 text-xs text-slate-400">{{ __('Reopening does not reset attendance already marked — it unlocks correction and is fully audited.') }}</p>
                     <form method="POST" action="{{ route('sessions.reopen', $dutySession) }}" class="space-y-3" onsubmit="return confirm('Reopen this session for correction?')">
                         @csrf
                         <div>
@@ -54,7 +88,7 @@
                         <x-shell.button tone="warning" type="submit">{{ __('Reopen Session') }}</x-shell.button>
                     </form>
                 </x-shell.card>
-            @endif
+            @endcan
 
             @if ($dutySession->reopenEvents->isNotEmpty())
                 <div>
@@ -79,6 +113,45 @@
             @endif
         @endif
 
+        @if ($dutySession->hasStructuredIdentity())
+            <x-shell.card class="kg-glass relative overflow-hidden">
+                <div class="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_right,theme(colors.blue.50),transparent_60%)]"></div>
+                <h3 class="mb-3 text-sm font-semibold text-slate-700">{{ __('Event Identity') }}</h3>
+                <dl class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <dt class="text-slate-400">{{ __('Miqaat') }}</dt>
+                        <dd class="font-medium text-slate-900">{{ $dutySession->miqaatRef->name }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-slate-400">{{ __('Event') }}</dt>
+                        <dd class="font-medium text-slate-900">{{ $dutySession->event->name }}</dd>
+                    </div>
+                    @if ($dutySession->event->family)
+                        <div>
+                            <dt class="text-slate-400">{{ __('Event Family') }}</dt>
+                            <dd class="font-medium text-slate-900">{{ $dutySession->event->family }}</dd>
+                        </div>
+                    @endif
+                    <div>
+                        <dt class="text-slate-400">{{ __('Venue') }}</dt>
+                        <dd class="font-medium text-slate-900">{{ $dutySession->venue->name }}</dd>
+                    </div>
+                    @if ($dutySession->venue->city)
+                        <div>
+                            <dt class="text-slate-400">{{ __('City') }}</dt>
+                            <dd class="font-medium text-slate-900">{{ $dutySession->venue->city }}</dd>
+                        </div>
+                    @endif
+                    @if ($dutySession->venue->area)
+                        <div>
+                            <dt class="text-slate-400">{{ __('Location') }}</dt>
+                            <dd class="font-medium text-slate-900">{{ $dutySession->venue->area }}</dd>
+                        </div>
+                    @endif
+                </dl>
+            </x-shell.card>
+        @endif
+
         <x-shell.card>
             <dl class="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -101,27 +174,35 @@
         </x-shell.card>
 
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            @if ($dutySession->isActive() && auth()->user()->canManageSessions())
-                <x-shell.button tone="primary" href="{{ route('attendance.shell.live', $dutySession) }}" class="lg:col-span-2">
-                    {{ __('Live Attendance') }}
-                </x-shell.button>
-            @endif
+            @can('view_live_attendance')
+                @if ($dutySession->isActive())
+                    <x-shell.button tone="primary" href="{{ route('attendance.shell.live', $dutySession) }}" class="lg:col-span-2">
+                        {{ __('Live Attendance') }}
+                    </x-shell.button>
+                @endif
+            @endcan
             <x-shell.button tone="outline" href="{{ route('sessions.command-center', $dutySession) }}">
                 {{ __('Command Center') }}
             </x-shell.button>
-            <x-shell.button tone="outline" href="{{ route('attendance.shell.list', $dutySession) }}">
-                {{ __('Attendance List') }}
-            </x-shell.button>
-            @if ($dutySession->isActive() && auth()->user()->canManageSessions())
-                <x-shell.button tone="warning" href="{{ route('attendance.shell.pending', $dutySession) }}">
-                    {{ __('End of Day Review') }}
+            @can('view_attendance_history')
+                <x-shell.button tone="outline" href="{{ route('attendance.shell.list', $dutySession) }}">
+                    {{ __('Attendance List') }}
                 </x-shell.button>
-            @endif
-            @if (auth()->user()->canManageSessions() && in_array($dutySession->status, ['draft', 'active'], true))
-                <x-shell.button tone="outline" href="{{ route('sessions.imports.create', $dutySession) }}">
-                    {{ __('Import Duty List') }}
-                </x-shell.button>
-            @endif
+            @endcan
+            @can('view_live_attendance')
+                @if ($dutySession->isActive())
+                    <x-shell.button tone="warning" href="{{ route('attendance.shell.pending', $dutySession) }}">
+                        {{ __('End of Day Review') }}
+                    </x-shell.button>
+                @endif
+            @endcan
+            @can('preview_import')
+                @if (in_array($dutySession->status, ['draft', 'active'], true))
+                    <x-shell.button tone="outline" href="{{ route('sessions.imports.create', $dutySession) }}">
+                        {{ __('Import Duty List') }}
+                    </x-shell.button>
+                @endif
+            @endcan
         </div>
 
         <div>
@@ -158,11 +239,13 @@
                                     <p class="text-slate-400">{{ __('Invalid') }}</p>
                                 </div>
                             </div>
-                            @if ($batch->updated_khidmatguzars > 0)
-                                <a href="{{ route('sessions.imports.diff', [$dutySession, $batch]) }}" class="mt-3 block text-center text-xs font-semibold text-blue-600 underline">
-                                    {{ __(':count master-data change(s) — View Diff', ['count' => $batch->updated_khidmatguzars]) }}
-                                </a>
-                            @endif
+                            @can('import_duty_list')
+                                @if ($batch->updated_khidmatguzars > 0)
+                                    <a href="{{ route('sessions.imports.diff', [$dutySession, $batch]) }}" class="mt-3 block text-center text-xs font-semibold text-blue-600 underline">
+                                        {{ __(':count master-data change(s) — View Diff', ['count' => $batch->updated_khidmatguzars]) }}
+                                    </a>
+                                @endif
+                            @endcan
                         </div>
                     @endforeach
                 </div>

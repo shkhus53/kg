@@ -43,7 +43,14 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('its_number', 'password'), $this->boolean('remember'))) {
+        // 'is_active' => true is folded into the credentials array rather
+        // than checked after the fact — Laravel's EloquentUserProvider
+        // applies every non-'password' credential key as a WHERE clause
+        // during lookup, so an inactive account simply doesn't match any
+        // row and fails with the exact same generic auth.failed message
+        // as a wrong password — no separate check, no extra information
+        // leaked about why a given ITS number didn't work.
+        if (! Auth::attempt([...$this->only('its_number', 'password'), 'is_active' => true], $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([

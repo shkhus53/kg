@@ -53,6 +53,41 @@
             </x-shell.card>
         </div>
 
+        @if (! empty($preview['multi_department_its']))
+            <x-shell.card>
+                <h3 class="mb-2 text-sm font-semibold text-slate-700">{{ __('Same Person, Multiple Departments') }}</h3>
+                <p class="mb-3 text-xs text-slate-400">{{ __('This is expected and valid — each row below will create its own separate Duty Assignment, never merged into one.') }}</p>
+                <div class="max-h-60 space-y-2 overflow-y-auto text-sm">
+                    @foreach ($preview['multi_department_its'] as $person)
+                        <div class="rounded-lg bg-violet-50 px-3 py-2">
+                            <p class="font-medium text-slate-800">{{ $person['name'] }} <span class="text-xs font-normal text-slate-400">({{ __('ITS') }} {{ $person['its_id'] }})</span></p>
+                            <p class="text-xs text-violet-700">{{ implode(' + ', $person['departments']) }} &middot; {{ count($person['departments']) }} {{ __('separate assignments') }}</p>
+                        </div>
+                    @endforeach
+                </div>
+            </x-shell.card>
+        @endif
+
+        @if ($planComparison)
+            <x-shell.card>
+                <h3 class="mb-1 text-sm font-semibold text-slate-700">{{ __('Plan vs This Import') }}</h3>
+                <p class="mb-3 text-xs text-slate-400">{{ __('This session was created from an Event Plan. Comparison only — the plan itself is never changed by an import.') }}</p>
+                <div class="space-y-1.5 text-sm">
+                    @foreach ($planComparison as $row)
+                        <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                            <span class="truncate text-slate-700">{{ $row['name'] }}</span>
+                            <span class="text-xs tabular-nums text-slate-500">
+                                {{ __('Planned') }} {{ $row['planned'] }} &middot; {{ __('Incoming') }} {{ $row['incoming'] }}
+                                <span class="font-semibold {{ $row['gap'] < 0 ? 'text-orange-600' : ($row['gap'] > 0 ? 'text-blue-600' : 'text-emerald-600') }}">
+                                    ({{ $row['gap'] >= 0 ? '+' : '' }}{{ $row['gap'] }})
+                                </span>
+                            </span>
+                        </div>
+                    @endforeach
+                </div>
+            </x-shell.card>
+        @endif
+
         @if (! empty($preview['changed_khidmatguzars']))
             <x-shell.card>
                 <h3 class="mb-3 text-sm font-semibold text-blue-700">{{ __('Master-Data Changes — will be applied on confirm') }}</h3>

@@ -5,6 +5,17 @@
 
     <div class="space-y-5">
         <div class="lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0 space-y-5">
+            @can('build_reports')
+                <x-shell.card hover class="flex flex-col">
+                    <span class="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-navy-900/10 text-navy-900">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M6 12h12M9 18h6" /></svg>
+                    </span>
+                    <h3 class="mb-1 text-sm font-semibold text-slate-700">{{ __('Report Builder') }}</h3>
+                    <p class="mb-3 flex-1 text-xs text-slate-400">{{ __('Filter attendance by date, session, department, operator or status, then export.') }}</p>
+                    <x-shell.button tone="primary" href="{{ route('reports.builder') }}">{{ __('Open') }}</x-shell.button>
+                </x-shell.card>
+            @endcan
+
             <x-shell.card hover class="flex flex-col">
                 <span class="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                     <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4M5 21h14a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1Z" /></svg>

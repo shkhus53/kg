@@ -6,10 +6,15 @@ use App\Models\AttendanceEvent;
 use App\Models\Department;
 use App\Models\DutyAssignment;
 use App\Models\DutySession;
+use App\Models\EventPlan;
 use App\Models\ExtraPresent;
+use App\Models\ImportBatch;
 use App\Models\Khidmatguzar;
+use App\Models\SessionReopenEvent;
 use App\Models\User;
 use App\Support\Gender;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -24,6 +29,173 @@ use Illuminate\Support\Str;
  */
 class ReportService
 {
+    public function __construct(
+        private readonly EventPlanningService $planning,
+        private readonly OperationalAlertService $alerts,
+    ) {}
+
+    /**
+     * Phase 7: Management Summary — single source of truth for both the
+     * on-screen page (AnalyticsController::summary()) and its PDF/Excel
+     * exports, so the three can never disagree. Every number here is one
+     * of the already-established definitions (Attendance Rate = Present ÷
+     * Scheduled, Extra Present excluded, Actual Assigned = DutyAssignment
+     * rows via EventPlanningService::planVsActualByDepartment() — never
+     * unique ITS) — nothing recomputed with different logic.
+     *
+     * @return array<string,mixed>
+     */
+    public function managementSummary(string $from, string $to): array
+    {
+        $tz = config('app.operational_timezone');
+        $utcStart = Carbon::createFromFormat('Y-m-d', $from, $tz)->startOfDay()->utc();
+        $utcEnd = Carbon::createFromFormat('Y-m-d', $to, $tz)->endOfDay()->utc();
+
+        $totals = DutyAssignment::query()
+            ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
+            ->selectRaw("
+                COUNT(DISTINCT duty_sessions.id) as sessions,
+                COUNT(*) as scheduled,
+                SUM(current_status = 'present') as present,
+                SUM(current_status = 'absent') as absent,
+                SUM(current_status = 'pending') as pending
+            ")->first();
+
+        $scheduled = (int) ($totals->scheduled ?? 0);
+        $present = (int) ($totals->present ?? 0);
+
+        $extra = ExtraPresent::query()
+            ->join('duty_sessions', 'duty_sessions.id', '=', 'extra_presents.duty_session_id')
+            ->whereDate('duty_sessions.date', '>=', $from)->whereDate('duty_sessions.date', '<=', $to)
+            ->count();
+
+        $plans = EventPlan::with(['dutySession'])
+            ->where('status', 'finalized')->whereNotNull('duty_session_id')
+            ->whereDate('planned_date', '>=', $from)->whereDate('planned_date', '<=', $to)
+            ->get();
+
+        $sumPlanned = 0;
+        $sumActual = 0;
+        $underplannedDepartments = 0;
+
+        foreach ($plans as $plan) {
+            foreach ($this->planning->planVsActualByDepartment($plan, $plan->dutySession) as $row) {
+                $sumPlanned += $row['planned'];
+                $sumActual += $row['actual'];
+                $missingFromPlan = $row['planned'] === 0 && $row['actual'] > 0;
+                $overVariance = $row['planned'] > 0 && $row['actual'] > $row['planned'] * (1 + OperationalAlertService::UNDERPLANNED_VARIANCE_THRESHOLD);
+                if ($missingFromPlan || $overVariance) {
+                    $underplannedDepartments++;
+                }
+            }
+        }
+
+        $imports = ImportBatch::whereBetween('created_at', [$utcStart, $utcEnd])->get();
+
+        $corrections = AttendanceEvent::query()
+            ->from('attendance_events as ae')
+            ->where('ae.action', 'present')
+            ->whereBetween('ae.performed_at', [$utcStart, $utcEnd])
+            ->whereExists(function ($q) {
+                $q->selectRaw('1')->from('attendance_events as prior')
+                    ->whereColumn('prior.duty_assignment_id', 'ae.duty_assignment_id')
+                    ->where('prior.action', 'absent')
+                    ->whereColumn('prior.id', '<', 'ae.id');
+            })->count();
+
+        $reopenedSessions = SessionReopenEvent::whereBetween('reopened_at', [$utcStart, $utcEnd])
+            ->distinct('duty_session_id')->count('duty_session_id');
+
+        $alerts = $this->alerts->detect($from, $to, $utcStart, $utcEnd);
+
+        return [
+            'from' => $from,
+            'to' => $to,
+            'generated_at' => now()->toIst(),
+            'sessions' => (int) ($totals->sessions ?? 0),
+            'scheduled' => $scheduled,
+            'present' => $present,
+            'absent' => (int) ($totals->absent ?? 0),
+            'pending' => (int) ($totals->pending ?? 0),
+            'rate' => $scheduled > 0 ? round(100 * $present / $scheduled, 1) : null,
+            'extra' => $extra,
+            'planned' => $sumPlanned,
+            'actual' => $sumActual,
+            'planningGap' => $sumActual - $sumPlanned,
+            'underplannedDepartments' => $underplannedDepartments,
+            'imports' => $imports->count(),
+            'invalidRows' => $imports->sum('invalid_rows'),
+            'corrections' => $corrections,
+            'reopenedSessions' => $reopenedSessions,
+            'highAlerts' => collect($alerts)->where('severity', 'high')->count(),
+            'mediumAlerts' => collect($alerts)->where('severity', 'medium')->count(),
+            'topAlerts' => collect($alerts)->take(5)->values(),
+        ];
+    }
+
+    /**
+     * Phase 7 Report Builder — Attendance Detail: the single source of
+     * truth for the builder's filtered query, reused identically by the
+     * on-screen preview (paginated) and the Excel/PDF export (unpaginated,
+     * via ->get() on the same builder). Filters are all optional and
+     * additive (AND'd together); an unset filter matches everything.
+     * `current_status` is the sole attendance source, matching every other
+     * report in this class.
+     *
+     * @param  array{from?:string,to?:string,session_id?:int,department_id?:int,operator_id?:int,status?:string}  $filters
+     */
+    public function attendanceDetailQuery(array $filters): Builder
+    {
+        return DutyAssignment::query()
+            ->with(['khidmatguzar:id,its_id,full_name', 'department:id,name', 'dutySession:id,name,date'])
+            ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+            ->when($filters['from'] ?? null, fn ($q, $from) => $q->whereDate('duty_sessions.date', '>=', $from))
+            ->when($filters['to'] ?? null, fn ($q, $to) => $q->whereDate('duty_sessions.date', '<=', $to))
+            ->when($filters['session_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.duty_session_id', $id))
+            ->when($filters['department_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.department_id', $id))
+            ->when($filters['operator_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.attendance_marked_by', $id))
+            ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('duty_assignments.current_status', $status))
+            ->orderByDesc('duty_sessions.date')->orderBy('duty_assignments.id')
+            ->select('duty_assignments.*');
+    }
+
+    /**
+     * Aggregate totals for the same filter set, computed in SQL — never by
+     * summing a loaded/paginated page in PHP, which would silently only
+     * total the visible page instead of the whole filtered result.
+     *
+     * @param  array<string,mixed>  $filters
+     */
+    public function attendanceDetailTotals(array $filters): array
+    {
+        $totals = DutyAssignment::query()
+            ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+            ->when($filters['from'] ?? null, fn ($q, $from) => $q->whereDate('duty_sessions.date', '>=', $from))
+            ->when($filters['to'] ?? null, fn ($q, $to) => $q->whereDate('duty_sessions.date', '<=', $to))
+            ->when($filters['session_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.duty_session_id', $id))
+            ->when($filters['department_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.department_id', $id))
+            ->when($filters['operator_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.attendance_marked_by', $id))
+            ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('duty_assignments.current_status', $status))
+            ->selectRaw("
+                COUNT(*) as scheduled,
+                SUM(current_status = 'present') as present,
+                SUM(current_status = 'absent') as absent,
+                SUM(current_status = 'pending') as pending
+            ")->first();
+
+        $scheduled = (int) ($totals->scheduled ?? 0);
+        $present = (int) ($totals->present ?? 0);
+
+        return [
+            'scheduled' => $scheduled,
+            'present' => $present,
+            'absent' => (int) ($totals->absent ?? 0),
+            'pending' => (int) ($totals->pending ?? 0),
+            'rate' => $scheduled > 0 ? round(100 * $present / $scheduled, 1) : null,
+        ];
+    }
+
     /**
      * Report 1 + Report 4 combined: one Duty Session's full submission —
      * summary, department breakdown, assignment-level detail, Extra Present.

@@ -65,10 +65,10 @@ class KhidmatguzarReportExport implements WithMultipleSheets
         );
 
         $extraRows = $r['extraHistory']->map(fn ($e) => [
-            $e->marked_at->format('d M Y'),
+            $e->marked_at->toIst()->format('d M Y'),
             $e->dutySession->name,
             $e->department_name_snapshot,
-            $e->marked_at->format('H:i'),
+            $e->marked_at->toIst()->format('H:i'),
             $e->remark,
         ])->all();
 

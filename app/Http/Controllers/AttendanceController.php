@@ -97,6 +97,21 @@ class AttendanceController extends Controller
             'remark' => ['nullable', 'string', 'max:500'],
         ]);
 
+        // Attendance Correction (Absent -> Present) is a distinct
+        // permission from a first-time Present mark. Checked up front,
+        // across the WHOLE batch, before any assignment is touched — a
+        // mixed selection (some fresh pending, some already-Absent) must
+        // never partially mutate only the ones the actor happened to be
+        // allowed to touch.
+        if (! $request->user()->hasPermission('correct_attendance')) {
+            $anyAlreadyAbsent = DutyAssignment::where('duty_session_id', $dutySession->id)
+                ->whereIn('id', $validated['assignment_ids'])
+                ->where('current_status', 'absent')
+                ->exists();
+
+            abort_if($anyAlreadyAbsent, 403, 'Correcting Absent to Present requires the Attendance Correction permission.');
+        }
+
         if (count($validated['assignment_ids']) === 1) {
             $outcome = $this->attendance->markPresent($dutySession, (int) $validated['assignment_ids'][0], $request->user(), $validated['remark'] ?? null);
             $status = match ($outcome['result']) {

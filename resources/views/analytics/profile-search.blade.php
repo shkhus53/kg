@@ -31,6 +31,13 @@
                     @endforeach
                 </select>
 
+                <select name="gender" class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <option value="all" @selected($gender === 'all')>{{ __('All Genders') }}</option>
+                    <option value="Male" @selected($gender === 'Male')>{{ __('Male') }}</option>
+                    <option value="Female" @selected($gender === 'Female')>{{ __('Female') }}</option>
+                    <option value="Unknown" @selected($gender === 'Unknown')>{{ __('Unknown') }}</option>
+                </select>
+
                 <x-text-input name="jamaat" type="text" class="block w-full" :value="$jamaat" placeholder="{{ __('Jamaat') }}" />
 
                 <div>
@@ -50,6 +57,25 @@
                 <x-shell.button tone="primary" type="submit" class="lg:col-span-2">{{ __('Search') }}</x-shell.button>
             </form>
         </x-shell.card>
+
+        <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <a href="{{ request()->fullUrlWithQuery(['gender' => 'all', 'page' => null]) }}" class="rounded-2xl border p-3 text-center {{ $gender === 'all' ? 'border-navy-900 bg-navy-900/5' : 'border-slate-100 bg-white' }}">
+                <p class="text-lg font-semibold text-slate-900">{{ number_format($totalCount) }}</p>
+                <p class="text-xs text-slate-400">{{ __('Total') }}</p>
+            </a>
+            <a href="{{ request()->fullUrlWithQuery(['gender' => 'Male', 'page' => null]) }}" class="rounded-2xl border p-3 text-center {{ $gender === 'Male' ? 'border-navy-900 bg-navy-900/5' : 'border-slate-100 bg-white' }}">
+                <p class="text-lg font-semibold text-blue-600">{{ number_format($genderCounts['Male']) }}</p>
+                <p class="text-xs text-slate-400">{{ __('Male') }}</p>
+            </a>
+            <a href="{{ request()->fullUrlWithQuery(['gender' => 'Female', 'page' => null]) }}" class="rounded-2xl border p-3 text-center {{ $gender === 'Female' ? 'border-navy-900 bg-navy-900/5' : 'border-slate-100 bg-white' }}">
+                <p class="text-lg font-semibold text-violet-600">{{ number_format($genderCounts['Female']) }}</p>
+                <p class="text-xs text-slate-400">{{ __('Female') }}</p>
+            </a>
+            <a href="{{ request()->fullUrlWithQuery(['gender' => 'Unknown', 'page' => null]) }}" class="rounded-2xl border p-3 text-center {{ $gender === 'Unknown' ? 'border-navy-900 bg-navy-900/5' : 'border-slate-100 bg-white' }}">
+                <p class="text-lg font-semibold text-slate-500">{{ number_format($genderCounts['Unknown']) }}</p>
+                <p class="text-xs text-slate-400">{{ __('Unknown') }}</p>
+            </a>
+        </div>
 
         @if ($matches->isEmpty())
             <x-shell.empty-state title="{{ __('No Khidmatguzar found') }}" description="{{ __('Try broadening the search or clearing a filter.') }}">
@@ -84,7 +110,10 @@
                 @endforeach
             </div>
 
-            <div>{{ $matches->onEachSide(1)->links() }}</div>
+            <p class="text-center text-xs text-slate-400">
+                {{ __('Showing :from–:to of :total', ['from' => $matches->firstItem(), 'to' => $matches->lastItem(), 'total' => number_format($matches->total())]) }}
+            </p>
+            <div>{{ $matches->onEachSide(1)->links('pagination.tailwind-no-summary') }}</div>
         @endif
     </div>
 </x-app-layout>

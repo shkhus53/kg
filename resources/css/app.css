@@ -7,6 +7,22 @@
 }
 
 /*
+ * Keyboard-aware guest layout (login/register). Normally the card is
+ * vertically centered (.kg-guest-shell's own classes). While
+ * resources/js/auth-viewport.js detects an open virtual keyboard shrinking
+ * the visual viewport, it adds .kg-kbd-open to <html> — this switches the
+ * shell from centered to top-aligned and scrollable, which is what makes
+ * scrolling the focused field into view possible at all. Not a padding
+ * hack: it changes the layout mode, then JS scrolls only if still needed.
+ */
+.kg-kbd-open .kg-guest-shell {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
+}
+
+/*
  * Phase 10 — design tokens + motion primitives.
  *
  * Restrained by design: durations are short (150-320ms), easing is a

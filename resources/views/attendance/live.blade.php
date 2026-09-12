@@ -133,31 +133,35 @@
                             {{ __('This person is in this session\'s duty list and not yet marked.') }}
                         </div>
 
-                        <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="mt-4 space-y-3 js-attendance-form" data-offline-action="present" data-assignment-id="{{ $assignment->id }}">
-                            @csrf
-                            <input type="hidden" name="assignment_ids[]" value="{{ $assignment->id }}">
-                            <input type="hidden" name="its" value="{{ $itsId }}">
+                        @can('mark_attendance')
+                            <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="mt-4 space-y-3 js-attendance-form" data-offline-action="present" data-assignment-id="{{ $assignment->id }}">
+                                @csrf
+                                <input type="hidden" name="assignment_ids[]" value="{{ $assignment->id }}">
+                                <input type="hidden" name="its" value="{{ $itsId }}">
 
-                            <button type="button" @click="remarkOpen = !remarkOpen" class="text-xs font-semibold text-blue-600">
-                                {{ __('+ Add Remark') }}
-                            </button>
-                            <div x-show="remarkOpen" x-cloak>
-                                <textarea name="remark" rows="2" maxlength="500" class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('Optional remark') }}"></textarea>
-                            </div>
+                                <button type="button" @click="remarkOpen = !remarkOpen" class="text-xs font-semibold text-blue-600">
+                                    {{ __('+ Add Remark') }}
+                                </button>
+                                <div x-show="remarkOpen" x-cloak>
+                                    <textarea name="remark" rows="2" maxlength="500" class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('Optional remark') }}"></textarea>
+                                </div>
 
-                            <div class="grid grid-cols-2 gap-3">
-                                <x-shell.button tone="success" type="submit" :disabled="! $dutySession->isActive()">{{ __('Mark Present') }}</x-shell.button>
-                                <x-shell.button tone="outline" href="{{ route('attendance.shell.live', $dutySession) }}">{{ __('Cancel') }}</x-shell.button>
-                            </div>
-                        </form>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <x-shell.button tone="success" type="submit" :disabled="! $dutySession->isActive()">{{ __('Mark Present') }}</x-shell.button>
+                                    <x-shell.button tone="outline" href="{{ route('attendance.shell.live', $dutySession) }}">{{ __('Cancel') }}</x-shell.button>
+                                </div>
+                            </form>
+                        @endcan
 
                         @if ($dutySession->isActive())
-                            <form method="POST" action="{{ route('attendance.absent', $dutySession) }}" class="mt-2 js-attendance-form" data-offline-action="absent" data-assignment-id="{{ $assignment->id }}" onsubmit="return confirm('{{ __('Mark this person Absent?') }}')">
-                                @csrf
-                                <input type="hidden" name="assignment_id" value="{{ $assignment->id }}">
-                                <input type="hidden" name="its" value="{{ $itsId }}">
-                                <button type="submit" class="w-full rounded-xl border border-red-200 py-2 text-xs font-semibold text-red-600">{{ __('Mark Absent') }}</button>
-                            </form>
+                            @can('mark_attendance')
+                                <form method="POST" action="{{ route('attendance.absent', $dutySession) }}" class="mt-2 js-attendance-form" data-offline-action="absent" data-assignment-id="{{ $assignment->id }}" onsubmit="return confirm('{{ __('Mark this person Absent?') }}')">
+                                    @csrf
+                                    <input type="hidden" name="assignment_id" value="{{ $assignment->id }}">
+                                    <input type="hidden" name="its" value="{{ $itsId }}">
+                                    <button type="submit" class="w-full rounded-xl border border-red-200 py-2 text-xs font-semibold text-red-600">{{ __('Mark Absent') }}</button>
+                                </form>
+                            @endcan
                         @endif
                     @elseif ($assignment->current_status === 'present')
                         <div class="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">
@@ -177,13 +181,15 @@
                         </div>
 
                         @if ($dutySession->isActive())
-                            <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="mt-3 js-attendance-form" data-offline-action="present" data-assignment-id="{{ $assignment->id }}" x-data="{ submitting: false }" @submit="submitting = true">
-                                @csrf
-                                <input type="hidden" name="assignment_ids[]" value="{{ $assignment->id }}">
-                                <input type="hidden" name="its" value="{{ $itsId }}">
-                                <p class="mb-2 text-xs text-slate-500">{{ __('Person arrived late? Correct this to Present.') }}</p>
-                                <x-shell.button tone="success" type="submit" x-bind:disabled="submitting">{{ __('Mark Present') }}</x-shell.button>
-                            </form>
+                            @can('correct_attendance')
+                                <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="mt-3 js-attendance-form" data-offline-action="present" data-assignment-id="{{ $assignment->id }}" x-data="{ submitting: false }" @submit="submitting = true">
+                                    @csrf
+                                    <input type="hidden" name="assignment_ids[]" value="{{ $assignment->id }}">
+                                    <input type="hidden" name="its" value="{{ $itsId }}">
+                                    <p class="mb-2 text-xs text-slate-500">{{ __('Person arrived late? Correct this to Present.') }}</p>
+                                    <x-shell.button tone="success" type="submit" x-bind:disabled="submitting">{{ __('Mark Present') }}</x-shell.button>
+                                </form>
+                            @endcan
                         @endif
                     @endif
                 </x-shell.card>
@@ -194,33 +200,50 @@
                         {{ __('ITS :its has :count separate duty assignments in this session. Select which one(s) to mark.', ['its' => $itsId, 'count' => $matches->count()]) }}
                     </p>
 
-                    <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="space-y-3" onsubmit="return confirm('{{ __('Mark the selected assignment(s) Present?') }}')">
-                        @csrf
-                        <input type="hidden" name="its" value="{{ $itsId }}">
+                    @canany(['mark_attendance', 'correct_attendance'])
+                        <form method="POST" action="{{ route('attendance.present', $dutySession) }}" class="space-y-3" onsubmit="return confirm('{{ __('Mark the selected assignment(s) Present?') }}')">
+                            @csrf
+                            <input type="hidden" name="its" value="{{ $itsId }}">
 
+                            <div class="space-y-2">
+                                @foreach ($matches as $assignment)
+                                    @php
+                                        $correctable = ($assignment->current_status === 'pending' && auth()->user()->hasPermission('mark_attendance'))
+                                            || ($assignment->current_status === 'absent' && auth()->user()->hasPermission('correct_attendance'));
+                                    @endphp
+                                    <label class="flex items-center justify-between rounded-xl border border-slate-100 p-3 {{ ! $correctable ? 'opacity-60' : '' }}">
+                                        <span class="flex items-center gap-3">
+                                            <input type="checkbox" name="assignment_ids[]" value="{{ $assignment->id }}"
+                                                   x-model="selected"
+                                                   @unless ($correctable) disabled @endunless
+                                                   class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                            <span>
+                                                <span class="block text-sm font-medium text-slate-900">{{ $assignment->department->name }}</span>
+                                                <span class="block text-xs text-slate-400">{{ $assignment->block_name }} &middot; {{ __('Seat') }} {{ $assignment->seat ?: '—' }}</span>
+                                            </span>
+                                        </span>
+                                        <x-shell.badge :tone="$assignment->current_status === 'present' ? 'green' : ($assignment->current_status === 'absent' ? 'red' : 'orange')">{{ $assignment->current_status }}</x-shell.badge>
+                                    </label>
+                                @endforeach
+                            </div>
+
+                            <x-shell.button tone="success" type="submit" x-bind:disabled="selected.length === 0 || !sessionActive">
+                                {{ __('Mark Selected Present') }}
+                            </x-shell.button>
+                        </form>
+                    @else
                         <div class="space-y-2">
                             @foreach ($matches as $assignment)
-                                @php $correctable = in_array($assignment->current_status, ['pending', 'absent'], true); @endphp
-                                <label class="flex items-center justify-between rounded-xl border border-slate-100 p-3 {{ ! $correctable ? 'opacity-60' : '' }}">
-                                    <span class="flex items-center gap-3">
-                                        <input type="checkbox" name="assignment_ids[]" value="{{ $assignment->id }}"
-                                               x-model="selected"
-                                               @unless ($correctable) disabled @endunless
-                                               class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                        <span>
-                                            <span class="block text-sm font-medium text-slate-900">{{ $assignment->department->name }}</span>
-                                            <span class="block text-xs text-slate-400">{{ $assignment->block_name }} &middot; {{ __('Seat') }} {{ $assignment->seat ?: '—' }}</span>
-                                        </span>
+                                <div class="flex items-center justify-between rounded-xl border border-slate-100 p-3">
+                                    <span>
+                                        <span class="block text-sm font-medium text-slate-900">{{ $assignment->department->name }}</span>
+                                        <span class="block text-xs text-slate-400">{{ $assignment->block_name }} &middot; {{ __('Seat') }} {{ $assignment->seat ?: '—' }}</span>
                                     </span>
                                     <x-shell.badge :tone="$assignment->current_status === 'present' ? 'green' : ($assignment->current_status === 'absent' ? 'red' : 'orange')">{{ $assignment->current_status }}</x-shell.badge>
-                                </label>
+                                </div>
                             @endforeach
                         </div>
-
-                        <x-shell.button tone="success" type="submit" x-bind:disabled="selected.length === 0 || !sessionActive">
-                            {{ __('Mark Selected Present') }}
-                        </x-shell.button>
-                    </form>
+                    @endcanany
                 </x-shell.card>
             @elseif ($alreadyExtra)
                 <x-shell.card>
@@ -251,53 +274,55 @@
                         {{ __('Submitting this form works offline. Starting a new ITS search needs a connection.') }}
                     </p>
 
-                    <form method="POST" action="{{ route('attendance.extra-present', $dutySession) }}" class="mt-4 space-y-3 js-extra-present-form">
-                        @csrf
-                        <input type="hidden" name="its" value="{{ $itsId }}">
+                    @can('mark_extra_present')
+                        <form method="POST" action="{{ route('attendance.extra-present', $dutySession) }}" class="mt-4 space-y-3 js-extra-present-form">
+                            @csrf
+                            <input type="hidden" name="its" value="{{ $itsId }}">
 
-                        @unless ($knownPerson)
+                            @unless ($knownPerson)
+                                <div>
+                                    <x-input-label for="full_name" :value="__('Full Name')" />
+                                    <x-text-input id="full_name" name="full_name" type="text" class="mt-1 block w-full" required />
+                                </div>
+                            @endunless
+
+                            @php
+                                $knownGender = $knownPerson ? \App\Support\Gender::shortLabel($knownPerson->gender) : null;
+                                $knownGender = $knownGender === 'M' ? 'Male' : ($knownGender === 'F' ? 'Female' : null);
+                            @endphp
                             <div>
-                                <x-input-label for="full_name" :value="__('Full Name')" />
-                                <x-text-input id="full_name" name="full_name" type="text" class="mt-1 block w-full" required />
+                                <x-input-label :value="__('Gender')" />
+                                <select name="gender" required class="mt-1 block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="">{{ __('Choose gender…') }}</option>
+                                    <option value="Male" @selected($knownGender === 'Male')>{{ __('Male') }}</option>
+                                    <option value="Female" @selected($knownGender === 'Female')>{{ __('Female') }}</option>
+                                </select>
                             </div>
-                        @endunless
 
-                        @php
-                            $knownGender = $knownPerson ? \App\Support\Gender::shortLabel($knownPerson->gender) : null;
-                            $knownGender = $knownGender === 'M' ? 'Male' : ($knownGender === 'F' ? 'Female' : null);
-                        @endphp
-                        <div>
-                            <x-input-label :value="__('Gender')" />
-                            <select name="gender" required class="mt-1 block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                <option value="">{{ __('Choose gender…') }}</option>
-                                <option value="Male" @selected($knownGender === 'Male')>{{ __('Male') }}</option>
-                                <option value="Female" @selected($knownGender === 'Female')>{{ __('Female') }}</option>
-                            </select>
-                        </div>
+                            <div>
+                                <x-input-label :value="__('Select Department')" />
+                                <select name="department_id" required class="mt-1 block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="">{{ __('Choose department…') }}</option>
+                                    @foreach ($departments as $dept)
+                                        <option value="{{ $dept->id }}">{{ $dept->name }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-[11px] text-slate-400">{{ __('Populated from this session\'s current departments.') }}</p>
+                            </div>
 
-                        <div>
-                            <x-input-label :value="__('Select Department')" />
-                            <select name="department_id" required class="mt-1 block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                <option value="">{{ __('Choose department…') }}</option>
-                                @foreach ($departments as $dept)
-                                    <option value="{{ $dept->id }}">{{ $dept->name }}</option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-[11px] text-slate-400">{{ __('Populated from this session\'s current departments.') }}</p>
-                        </div>
+                            <div>
+                                <x-input-label for="remark" :value="__('Remarks (optional)')" />
+                                <textarea id="remark" name="remark" rows="2" maxlength="500" class="mt-1 block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
+                            </div>
 
-                        <div>
-                            <x-input-label for="remark" :value="__('Remarks (optional)')" />
-                            <textarea id="remark" name="remark" rows="2" maxlength="500" class="mt-1 block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
-                        </div>
-
-                        <x-shell.button tone="warning" type="submit" :disabled="! $dutySession->isActive() || $departments->isEmpty()">
-                            {{ __('Mark Extra Present') }}
-                        </x-shell.button>
-                        @if ($departments->isEmpty())
-                            <p class="text-center text-xs text-red-500">{{ __('This session has no imported departments yet.') }}</p>
-                        @endif
-                    </form>
+                            <x-shell.button tone="warning" type="submit" :disabled="! $dutySession->isActive() || $departments->isEmpty()">
+                                {{ __('Mark Extra Present') }}
+                            </x-shell.button>
+                            @if ($departments->isEmpty())
+                                <p class="text-center text-xs text-red-500">{{ __('This session has no imported departments yet.') }}</p>
+                            @endif
+                        </form>
+                    @endcan
                 </x-shell.card>
             @endif
         @endif

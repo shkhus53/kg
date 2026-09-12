@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Exports\DepartmentDetailReportExport;
+use App\Exports\DepartmentReportExport;
 use App\Models\Department;
 use App\Models\DutyAssignment;
 use App\Models\DutySession;
@@ -11,7 +12,9 @@ use App\Models\Khidmatguzar;
 use App\Models\User;
 use App\Services\AttendanceService;
 use App\Services\ReportService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Maatwebsite\Excel\Facades\Excel;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\TestCase;
 
@@ -19,7 +22,7 @@ class DepartmentDetailReportTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function makeAssignment(DutySession $session, Department $dept, ImportBatch $batch, ?string $gender, string $status, string $its = null): DutyAssignment
+    private function makeAssignment(DutySession $session, Department $dept, ImportBatch $batch, ?string $gender, string $status, ?string $its = null): DutyAssignment
     {
         $kg = Khidmatguzar::create(['its_id' => $its ?? (string) random_int(10000000, 99999999), 'full_name' => 'Dept Detail Person', 'gender' => $gender]);
 
@@ -142,7 +145,7 @@ class DepartmentDetailReportTest extends TestCase
         $data = app(ReportService::class)->departmentDetailReport([$deptA->id], $session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
 
         $path = storage_path('app/private/test-dept-sheets.xlsx');
-        \Maatwebsite\Excel\Facades\Excel::store(new DepartmentDetailReportExport($data), 'test-dept-sheets.xlsx', 'local');
+        Excel::store(new DepartmentDetailReportExport($data), 'test-dept-sheets.xlsx', 'local');
 
         $spreadsheet = IOFactory::load($path);
         $titles = array_map(fn ($s) => $s->getTitle(), $spreadsheet->getAllSheets());
@@ -157,7 +160,7 @@ class DepartmentDetailReportTest extends TestCase
         [$session, $deptA] = $this->seedTwoDepartments();
         $data = app(ReportService::class)->departmentDetailReport([$deptA->id], $session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
 
-        \Maatwebsite\Excel\Facades\Excel::store(new DepartmentDetailReportExport($data), 'test-dept-count.xlsx', 'local');
+        Excel::store(new DepartmentDetailReportExport($data), 'test-dept-count.xlsx', 'local');
         $path = storage_path('app/private/test-dept-count.xlsx');
 
         $spreadsheet = IOFactory::load($path);
@@ -173,7 +176,7 @@ class DepartmentDetailReportTest extends TestCase
         [$session, $deptA] = $this->seedTwoDepartments();
         $data = app(ReportService::class)->departmentDetailReport([$deptA->id], $session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
 
-        \Maatwebsite\Excel\Facades\Excel::store(new DepartmentDetailReportExport($data), 'test-dept-extra.xlsx', 'local');
+        Excel::store(new DepartmentDetailReportExport($data), 'test-dept-extra.xlsx', 'local');
         $path = storage_path('app/private/test-dept-extra.xlsx');
 
         $spreadsheet = IOFactory::load($path);
@@ -192,7 +195,7 @@ class DepartmentDetailReportTest extends TestCase
         [$session, $deptA] = $this->seedTwoDepartments();
         $data = app(ReportService::class)->departmentDetailReport([$deptA->id], $session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
 
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('reports.pdf.department-detail', $data)->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('reports.pdf.department-detail', $data)->setPaper('a4', 'portrait');
         $content = $pdf->output();
 
         $this->assertStringStartsWith('%PDF-', $content);
@@ -211,10 +214,10 @@ class DepartmentDetailReportTest extends TestCase
         $this->assertSame(0, $section['genderBreakdown']['scheduled']['male']);
 
         // Must not error when rendering either.
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('reports.pdf.department-detail', $data);
+        $pdf = Pdf::loadView('reports.pdf.department-detail', $data);
         $this->assertStringStartsWith('%PDF-', $pdf->output());
 
-        \Maatwebsite\Excel\Facades\Excel::store(new DepartmentDetailReportExport($data), 'test-dept-empty.xlsx', 'local');
+        Excel::store(new DepartmentDetailReportExport($data), 'test-dept-empty.xlsx', 'local');
         unlink(storage_path('app/private/test-dept-empty.xlsx'));
     }
 
@@ -265,7 +268,7 @@ class DepartmentDetailReportTest extends TestCase
         [$session, $deptA, $deptB] = $this->seedTwoDepartments();
         $data = app(ReportService::class)->departmentReport($session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
 
-        \Maatwebsite\Excel\Facades\Excel::store(new \App\Exports\DepartmentReportExport($data), 'test-all-dept.xlsx', 'local');
+        Excel::store(new DepartmentReportExport($data), 'test-all-dept.xlsx', 'local');
         $path = storage_path('app/private/test-all-dept.xlsx');
 
         $spreadsheet = IOFactory::load($path);
@@ -299,7 +302,7 @@ class DepartmentDetailReportTest extends TestCase
         [$session, $deptA] = $this->seedTwoDepartments();
         $data = app(ReportService::class)->departmentDetailReport([$deptA->id], $session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
 
-        \Maatwebsite\Excel\Facades\Excel::store(new DepartmentDetailReportExport($data), 'test-dept-matrix.xlsx', 'local');
+        Excel::store(new DepartmentDetailReportExport($data), 'test-dept-matrix.xlsx', 'local');
         $path = storage_path('app/private/test-dept-matrix.xlsx');
 
         $spreadsheet = IOFactory::load($path);
@@ -328,7 +331,7 @@ class DepartmentDetailReportTest extends TestCase
         [$session, $deptA, $deptB] = $this->seedTwoDepartments();
         $data = app(ReportService::class)->departmentReport($session->date->format('Y-m-d'), $session->date->format('Y-m-d'), $session->id);
 
-        \Maatwebsite\Excel\Facades\Excel::store(new \App\Exports\DepartmentReportExport($data), 'test-all-dept-gender.xlsx', 'local');
+        Excel::store(new DepartmentReportExport($data), 'test-all-dept-gender.xlsx', 'local');
         $path = storage_path('app/private/test-all-dept-gender.xlsx');
 
         $spreadsheet = IOFactory::load($path);

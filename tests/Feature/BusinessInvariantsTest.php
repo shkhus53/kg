@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AttendanceEvent;
 use App\Models\Department;
 use App\Models\DutyAssignment;
 use App\Models\DutySession;
@@ -14,6 +15,7 @@ use App\Services\DutyListImportService;
 use App\Services\ReportService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -142,7 +144,7 @@ class BusinessInvariantsTest extends TestCase
         $this->assertSame('marked', $result['result']);
         $this->assertSame('present', $assignment->fresh()->current_status);
         $this->assertNotNull($assignment->fresh()->attendance_marked_at);
-        $this->assertSame(1, \App\Models\AttendanceEvent::where('duty_assignment_id', $assignment->id)->count());
+        $this->assertSame(1, AttendanceEvent::where('duty_assignment_id', $assignment->id)->count());
     }
 
     /** 5. Pending -> Absent transition, and Present cannot be re-marked Absent. */
@@ -248,7 +250,7 @@ class BusinessInvariantsTest extends TestCase
         // idempotent repeat
         $again = $service->markAllRemainingAbsent($session, $user);
         $this->assertSame('nothing_pending', $again['result']);
-        $this->assertSame(1, \App\Models\AttendanceEvent::where('duty_assignment_id', $pending1->id)->count());
+        $this->assertSame(1, AttendanceEvent::where('duty_assignment_id', $pending1->id)->count());
     }
 
     /** 11. Close rejected while Pending > 0; session remains active. */
@@ -308,7 +310,7 @@ class BusinessInvariantsTest extends TestCase
         $this->assertSame(2, $report['scheduled']);
         $this->assertSame(1, $report['present']);
         $this->assertSame(1, $report['absent']);
-        $this->assertSame(1, \App\Models\AttendanceEvent::where('duty_assignment_id', $a1->id)->count());
+        $this->assertSame(1, AttendanceEvent::where('duty_assignment_id', $a1->id)->count());
     }
 
     /** 14. A failed transaction leaves no partial state (mirrors the manual Phase 2-5 rollback tests). */
@@ -320,10 +322,10 @@ class BusinessInvariantsTest extends TestCase
 
         $threw = false;
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($dept) {
+            DB::transaction(function () use ($dept) {
                 Khidmatguzar::create(['its_id' => '11110040', 'full_name' => 'Partial Person']);
                 // Force a real DB error inside the same transaction.
-                \Illuminate\Support\Facades\DB::table('extra_presents')->insert([
+                DB::table('extra_presents')->insert([
                     'duty_session_id' => 999999, // FK violation: session does not exist
                     'khidmatguzar_id' => 1,
                     'its_id_snapshot' => '11110040',
