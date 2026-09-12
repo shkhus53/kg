@@ -2,7 +2,26 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        {{--
+            interactive-widget=resizes-content: modern Android Chrome's
+            default is resizes-visual, which shrinks ONLY visualViewport
+            when the on-screen keyboard opens — window.innerHeight and every
+            100vh/min-h-screen box stay at their pre-keyboard size. Since
+            this guest shell centers short content in a min-height:100vh
+            flex box, that box never actually shrinks or overflows, so
+            there is nothing for auth-viewport.js's overflow toggle or
+            scrollIntoView to act on: the keyboard visually covers the
+            lower fields while the (unchanged) layout box reports plenty
+            of room. resizes-content makes Chrome/WebView shrink the real
+            layout viewport (and therefore 100vh) together with the
+            keyboard, so the flex box recomputes to the smaller height and
+            genuinely overflows/scrolls when content no longer fits — the
+            platform mechanism this class of bug is meant to be solved
+            with, not a JS heuristic. auth-viewport.js is kept as a
+            fallback for older WebViews that predate this meta directive
+            (Chromium < 108).
+        --}}
+        <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <meta name="theme-color" content="#0F1E3D">
         <link rel="manifest" href="/manifest.json">
