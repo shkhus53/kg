@@ -123,6 +123,20 @@ public class MainActivity extends Activity {
      * itself. A margin genuinely changes the WebView's measured width/height, so
      * Chromium recomputes its CSS viewport to that smaller size — `position: fixed`
      * elements then anchor to the new, already-safe-area-constrained edges.
+     *
+     * The same reasoning applies to the on-screen keyboard. android:windowSoftInputMode
+     * ="adjustResize" (manifest) asks the system to resize the window for the IME, but
+     * setDecorFitsSystemWindows(false) above means WE now own that resize — the system
+     * no longer does it automatically. Without also reading Type.ime() here, the
+     * WebView's native height never changed when the keyboard opened, so Chromium's own
+     * viewport inside it never shrank either: no CSS/meta-tag fix in the web page (see
+     * guest.blade.php's interactive-widget=resizes-content) could compensate for that,
+     * because the page was never told the keyboard opened at all. This is why Chrome
+     * (its own window, own IME handling) showed the fix working while this wrapper
+     * still covered the password field with the keyboard. Folding ime() into the same
+     * bottom-margin calculation (max'd against the nav bar, since only one is ever
+     * relevant at a time) makes the WebView genuinely shrink, which is what lets its
+     * interactive-widget behavior take effect inside it too.
      */
     private void setUpEdgeToEdgeInsets(FrameLayout root) {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
@@ -137,9 +151,10 @@ public class MainActivity extends Activity {
 
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
             ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) webView.getLayoutParams();
             params.topMargin = systemBars.top;
-            params.bottomMargin = systemBars.bottom;
+            params.bottomMargin = Math.max(systemBars.bottom, ime.bottom);
             params.leftMargin = systemBars.left;
             params.rightMargin = systemBars.right;
             webView.setLayoutParams(params);
