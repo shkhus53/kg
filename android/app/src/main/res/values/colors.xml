@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches MainActivity's STATUS_BAR_BACKDROP / the design system's navy — the
+         launcher icon's adaptive background, shown around the kg_icon.png artwork
+         wherever the launcher mask doesn't fully cover a square/circle. -->
+    <color name="ic_launcher_background">#0F1F41</color>
+</resources>
