@@ -38,10 +38,8 @@
     </head>
     <body class="min-h-screen bg-slate-50 font-sans text-slate-900 antialiased">
         <div class="kg-guest-shell flex min-h-screen flex-col items-center justify-center px-4">
-            <div class="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-navy-900 text-white">
-                <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M9 8h1m8-4H6a2 2 0 0 0-2 2v16l4-2 4 2 4-2 4 2V6a2 2 0 0 0-2-2Z" />
-                </svg>
+            <div class="mb-6 h-14 w-14 overflow-hidden rounded-2xl">
+                <img src="{{ asset('images/kg_icon.png') }}" alt="{{ config('app.name') }}" class="h-full w-full object-contain">
             </div>
             <p class="mb-6 text-sm font-medium text-slate-500">{{ config('app.name') }}</p>
 
