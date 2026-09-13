@@ -51,42 +51,44 @@
                 <div class="kg-glow kg-glow-c"></div>
             </div>
 
-            <div class="relative z-10 grid w-full max-w-6xl grid-cols-1 items-center gap-10 lg:min-h-screen lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:px-16 xl:px-24">
-                {{-- Brand panel --}}
+            <div class="relative z-10 grid w-full max-w-7xl grid-cols-1 items-center gap-14 lg:min-h-screen lg:grid-cols-2 lg:gap-24 lg:px-20 xl:px-28">
+                {{-- Brand panel — deliberately spacious rhythm between blocks, not a tight stack. --}}
                 <div class="flex flex-col items-center text-center lg:items-start lg:text-left">
                     <img src="{{ asset('images/kg_icon.png') }}" alt="{{ config('app.name') }}"
-                         class="h-[86px] w-[86px] shrink-0 rounded-3xl object-contain shadow-[0_20px_50px_-12px_rgba(79,70,229,0.35)] lg:h-[132px] lg:w-[132px]">
+                         class="h-[86px] w-[86px] shrink-0 rounded-3xl object-contain shadow-[0_20px_50px_-12px_rgba(79,70,229,0.35)] lg:h-[136px] lg:w-[136px]">
 
-                    <h1 class="mt-6 text-3xl font-extrabold leading-tight tracking-tight text-slate-900 lg:mt-8 lg:text-5xl">
+                    <h1 class="mt-10 text-3xl font-extrabold leading-tight tracking-tight text-slate-900 lg:mt-12 lg:text-6xl">
                         {{ __('Khidmatguzar') }}<br class="hidden lg:block">
                         <span class="lg:inline"> {{ __('Attendance') }}</span>
                     </h1>
-                    <p class="mt-3 text-base font-medium text-indigo-600 lg:mt-4 lg:text-lg">
+                    <p class="mt-4 text-base font-medium text-indigo-600 lg:mt-6 lg:text-xl">
                         {{ __('Mark Today. Build Tomorrow.') }}
                     </p>
 
-                    <div class="mt-12 hidden w-full max-w-none grid-cols-1 gap-5 lg:grid">
+                    <div class="mt-16 hidden w-full grid-cols-3 gap-8 lg:grid">
                         @foreach ([
                             ['icon' => 'M13 10V3L4 14h7v7l9-11h-7Z', 'title' => 'Simple Attendance', 'desc' => 'Quick and effortless'],
                             ['icon' => 'M9 17V9m3 8V5m3 12v-4M5 21h14a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1Z', 'title' => 'Useful Insights', 'desc' => 'Make better decisions'],
                             ['icon' => 'M12 3 4 6v6c0 4.5 3.4 8.7 8 9 4.6-.3 8-4.5 8-9V6l-8-3Z', 'title' => 'Secure & Reliable', 'desc' => 'Your data is protected'],
                         ] as $feature)
-                            <div class="flex flex-col items-center gap-2 text-center sm:flex-row sm:items-center sm:gap-3 sm:text-left lg:flex-row lg:text-left">
-                                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-indigo-600 shadow-sm ring-1 ring-indigo-100 backdrop-blur">
+                            <div class="flex flex-col items-start gap-3 text-left">
+                                <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-indigo-600 shadow-sm ring-1 ring-indigo-100 backdrop-blur">
                                     <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="{{ $feature['icon'] }}" /></svg>
                                 </span>
                                 <span class="min-w-0">
                                     <span class="block text-sm font-semibold text-slate-800">{{ __($feature['title']) }}</span>
-                                    <span class="block text-xs text-slate-500">{{ __($feature['desc']) }}</span>
+                                    <span class="mt-0.5 block text-xs leading-relaxed text-slate-500">{{ __($feature['desc']) }}</span>
                                 </span>
                             </div>
                         @endforeach
                     </div>
                 </div>
 
-                {{-- Premium white glass login card --}}
-                <div class="w-full max-w-md justify-self-center lg:max-w-[440px] lg:justify-self-end">
-                    <div class="kg-glass-card rounded-[2rem] p-7 sm:p-10">
+                {{-- Premium white glass login card — centered in its column so its
+                     visual weight balances the brand column rather than pinning to
+                     the far edge and leaving a dead strip beyond it. --}}
+                <div class="w-full max-w-md justify-self-center lg:max-w-[460px] lg:justify-self-center">
+                    <div class="kg-glass-card rounded-[2rem] p-8 sm:p-11">
                         {{ $slot }}
                     </div>
                 </div>

@@ -8,7 +8,7 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('login') }}" class="mt-7 space-y-5" data-keyboard-aware-form x-data="{ submitting: false }" @submit="submitting = true">
+    <form method="POST" action="{{ route('login') }}" class="mt-9 space-y-6" data-keyboard-aware-form x-data="{ submitting: false }" @submit="submitting = true">
         @csrf
 
         <div>
@@ -47,7 +47,7 @@
         </div>
 
         <button type="submit" x-bind:disabled="submitting"
-                class="kg-tap flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-3.5 text-base font-semibold text-white shadow-[0_16px_35px_-10px_rgba(79,70,229,0.55)] transition hover:from-indigo-500 hover:to-blue-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+                class="kg-tap mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-4 text-base font-semibold text-white shadow-[0_16px_35px_-10px_rgba(79,70,229,0.55)] transition hover:from-indigo-500 hover:to-blue-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
             <span x-show="!submitting">{{ __('Log in') }}</span>
             <span x-show="submitting" x-cloak class="inline-flex items-center gap-2">
                 <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z"></path></svg>
