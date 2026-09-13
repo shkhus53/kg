@@ -23,62 +23,53 @@
 }
 
 /*
- * Login/register full-bleed background — LIGHT luminous atmosphere (cool
- * white/blue foundation), not a dark panel. Large soft translucent arcs in
- * blue/indigo/violet give depth without noise; everything is static CSS
- * (no images, no animation), so it stays cheap on low-end WebViews.
+ * Login/register full-bleed background — matches the approved reference:
+ * an almost-white base with only very subtle blue/lavender/peach tint,
+ * "light passing through glass" rather than a visible gradient. Much
+ * lighter than earlier attempts — low contrast, no dark tones anywhere.
  */
 .kg-guest-bg {
     background:
-        radial-gradient(60% 55% at 12% 8%, rgba(99, 102, 241, 0.20), transparent 70%),
-        radial-gradient(55% 60% at 90% 12%, rgba(167, 139, 250, 0.22), transparent 70%),
-        radial-gradient(70% 65% at 50% 100%, rgba(59, 130, 246, 0.16), transparent 70%),
-        linear-gradient(160deg, #eef2ff 0%, #f5f7ff 40%, #eef4ff 100%);
+        radial-gradient(50% 45% at 8% 0%, rgba(191, 219, 254, 0.35), transparent 70%),
+        radial-gradient(45% 50% at 100% 10%, rgba(253, 224, 220, 0.25), transparent 70%),
+        radial-gradient(60% 55% at 60% 100%, rgba(221, 214, 254, 0.25), transparent 70%),
+        linear-gradient(165deg, #f7f9ff 0%, #f4f6fd 50%, #f8f4fb 100%);
 }
 
 .kg-glow {
     position: absolute;
     border-radius: 9999px;
-    filter: blur(100px);
+    filter: blur(110px);
 }
 
 .kg-glow-a {
-    top: -14%;
-    left: -10%;
-    width: 40rem;
-    height: 40rem;
-    background: radial-gradient(circle, rgba(129, 140, 248, 0.35), transparent 70%);
+    top: -18%;
+    left: -12%;
+    width: 38rem;
+    height: 38rem;
+    background: radial-gradient(circle, rgba(191, 219, 254, 0.5), transparent 70%);
 }
 
 .kg-glow-b {
-    bottom: -18%;
-    right: -12%;
-    width: 36rem;
-    height: 36rem;
-    background: radial-gradient(circle, rgba(196, 181, 253, 0.35), transparent 70%);
+    bottom: -20%;
+    left: 30%;
+    width: 34rem;
+    height: 34rem;
+    background: radial-gradient(circle, rgba(254, 215, 226, 0.35), transparent 70%);
 }
 
-.kg-glow-c {
-    top: 30%;
-    right: 12%;
-    width: 24rem;
-    height: 24rem;
-    background: radial-gradient(circle, rgba(96, 165, 250, 0.28), transparent 70%);
-}
-
-/* A large flowing translucent arc, purely decorative, sitting behind the
-   brand panel on desktop — the "soft flowing curve" layer from the design
-   direction, rendered as a rotated soft-edged ellipse rather than a sharp
-   geometric shape. */
-.kg-flow-arc {
+/* The large soft translucent "orb" sitting behind/right of the login card —
+   the single most recognizable element of the reference's background: one
+   quiet luminous sphere, not a busy collage of shapes. */
+.kg-orb {
     position: absolute;
-    top: 8%;
-    left: -18%;
-    width: 60rem;
-    height: 60rem;
-    border-radius: 45% 55% 60% 40% / 50% 45% 55% 50%;
-    background: linear-gradient(135deg, rgba(191, 219, 254, 0.55), rgba(221, 214, 254, 0.35) 60%, transparent 85%);
-    filter: blur(2px);
+    top: 12%;
+    right: -6%;
+    width: 46rem;
+    height: 46rem;
+    border-radius: 9999px;
+    background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.9), rgba(199, 210, 254, 0.55) 45%, rgba(196, 181, 253, 0.3) 70%, transparent 85%);
+    filter: blur(6px);
 }
 
 /* Premium WHITE glass login card — the visual focal point on the right
