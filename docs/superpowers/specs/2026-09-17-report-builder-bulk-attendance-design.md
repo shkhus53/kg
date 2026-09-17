@@ -19,12 +19,14 @@ report by gender.
 
 ### Gender filter
 
-- Options come from `Khidmatguzar::whereNotNull('gender')->distinct()->pluck('gender')`
-  — not hardcoded — so it always matches whatever values actually exist in the data.
+- Reuses the existing `App\Support\Gender` bucketing (already used elsewhere in
+  reports) rather than raw distinct DB values — real data mixes `M`/`Male` and
+  `F`/`Female` per import batch, and `Gender::caseSql()` already normalizes that.
+  Dropdown options: Male / Female / Unknown (`Gender::MALE`, `::FEMALE`, `::UNKNOWN`).
 - Wired into `ReportService::attendanceDetailQuery()` and `attendanceDetailTotals()`
-  as an additional `->when($filters['gender'] ?? null, ...)` clause. Both queries
-  currently join `duty_sessions` only; they gain a join to `khidmatguzars` (via
-  `duty_assignments.khidmatguzar_id`) to filter on `khidmatguzars.gender`.
+  as an additional `->when($filters['gender'] ?? null, fn($q,$g) => $q->whereRaw(Gender::caseSql('khidmatguzars.gender').' = ?', [$g]))`.
+  Both queries currently join `duty_sessions` only; they gain a join to
+  `khidmatguzars` (via `duty_assignments.khidmatguzar_id`).
 - `resolveBuilderFilters()` in the controller gains `'gender' => $request->query('gender')`.
 
 ### Row selection
@@ -51,11 +53,11 @@ report by gender.
   span multiple sessions/dates) and each group is passed to the existing
   `AttendanceService::markPresentMany()` / a new `markAbsentMany()` (mirroring
   `markPresentMany`'s structure) for that session.
-- Absent correction rule (unchanged from the live screen): before any writes,
-  if any selected assignment is currently `present` and the actor lacks
-  `correct_attendance`, the **entire** bulk-absent request is rejected — no
-  partial application. This check spans all session-groups in the request, not
-  just one.
+- Present→Absent is never allowed, for anyone, matching the existing
+  `AttendanceService::markAbsent()` invariant — it is not a permission-gated
+  correction, it simply cannot happen. Bulk Absent silently skips (and reports
+  back) any selected row that is currently `present`; it only acts on `pending`
+  rows (and treats already-`absent` rows as a no-op, also reported back).
 - A session-group is skipped (not silently dropped — reported back) if that
   session is not active, in case of a race between page load and submission.
 - Response: redirect back to `reports.builder` with the current query string
@@ -75,7 +77,7 @@ report by gender.
 - Feature test: gender filter narrows results correctly.
 - Feature test: bulk present marks selected pending rows present, skips rows in
   closed sessions, skips rows in inactive sessions gracefully.
-- Feature test: bulk absent on a mix of pending + present rows is rejected
-  wholesale for an actor without `correct_attendance`, and succeeds for one with it.
+- Feature test: bulk absent on a mix of pending + present rows marks only the
+  pending ones, skipping present rows regardless of the actor's permissions.
 - Feature test: `mark_attendance` permission is required to hit the two new
   routes at all (403 without it, independent of `build_reports`).

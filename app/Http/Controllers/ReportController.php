@@ -10,11 +10,15 @@ use App\Exports\ManagementSummaryReportExport;
 use App\Exports\OperatorActivityReportExport;
 use App\Exports\SessionAttendanceExport;
 use App\Models\Department;
+use App\Models\DutyAssignment;
 use App\Models\DutySession;
 use App\Models\Khidmatguzar;
 use App\Models\User;
+use App\Services\AttendanceService;
 use App\Services\ReportService;
+use App\Support\Gender;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\View\View;
@@ -22,12 +26,17 @@ use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * All routes are read-only (GET only) and reachable by every authenticated
- * role including Viewer — report generation never mutates attendance data.
+ * Every route is read-only (GET only) and reachable by every authenticated
+ * role including Viewer — report generation never mutates attendance data —
+ * except the Report Builder's bulk Present/Absent actions below, which are
+ * POST and separately gated behind `can:mark_attendance`.
  */
 class ReportController extends Controller
 {
-    public function __construct(private readonly ReportService $reports) {}
+    public function __construct(
+        private readonly ReportService $reports,
+        private readonly AttendanceService $attendance,
+    ) {}
 
     public function index(): View
     {
@@ -187,7 +196,97 @@ class ReportController extends Controller
             'sessionOptions' => DutySession::orderByDesc('date')->get(['id', 'name', 'date']),
             'departmentOptions' => Department::orderBy('name')->get(['id', 'name']),
             'operatorOptions' => User::whereIn('role', ['admin', 'operator'])->orderBy('name')->get(['id', 'name']),
+            'genderOptions' => [Gender::MALE, Gender::FEMALE, Gender::UNKNOWN],
         ]);
+    }
+
+    /**
+     * Bulk-mark selected Report Builder rows Present. Rows are grouped by
+     * duty session (a filtered page can span several) since attendance
+     * mutation is always scoped to one session at a time.
+     */
+    public function builderMarkPresent(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'assignment_ids' => ['required', 'array', 'min:1'],
+            'assignment_ids.*' => ['integer'],
+        ]);
+
+        $assignmentIds = array_map('intval', $validated['assignment_ids']);
+
+        $assignments = DutyAssignment::whereIn('id', $assignmentIds)->get(['id', 'duty_session_id', 'current_status']);
+
+        // Absent -> Present is a permission-gated correction (see
+        // AttendanceController::present) — checked across the WHOLE
+        // selection before any group is touched, same all-or-nothing rule.
+        if (! $request->user()->hasPermission('correct_attendance')
+            && $assignments->contains('current_status', 'absent')) {
+            abort(403, 'Correcting Absent to Present requires the Attendance Correction permission.');
+        }
+
+        $marked = 0;
+        $corrected = 0;
+        $skippedClosed = 0;
+
+        foreach ($assignments->groupBy('duty_session_id') as $sessionId => $group) {
+            $session = DutySession::find($sessionId);
+
+            $outcome = $this->attendance->markPresentMany($session, $group->pluck('id')->all(), $request->user());
+
+            if (! empty($outcome['session_not_active'])) {
+                $skippedClosed += $group->count();
+
+                continue;
+            }
+
+            $marked += count($outcome['marked']);
+            $corrected += count($outcome['corrected']);
+        }
+
+        return redirect()->route('reports.builder', $request->query())
+            ->with('flash_success', ($marked + $corrected).' marked Present.'
+                .($skippedClosed > 0 ? ' '.$skippedClosed.' skipped (session not active).' : ''));
+    }
+
+    /**
+     * Bulk-mark selected Report Builder rows Absent. Present -> Absent is
+     * never allowed (see AttendanceService::markAbsent) so those rows are
+     * silently skipped rather than blocking the whole request.
+     */
+    public function builderMarkAbsent(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'assignment_ids' => ['required', 'array', 'min:1'],
+            'assignment_ids.*' => ['integer'],
+        ]);
+
+        $assignmentIds = array_map('intval', $validated['assignment_ids']);
+
+        $assignments = DutyAssignment::whereIn('id', $assignmentIds)->get(['id', 'duty_session_id']);
+
+        $marked = 0;
+        $skippedPresent = 0;
+        $skippedClosed = 0;
+
+        foreach ($assignments->groupBy('duty_session_id') as $sessionId => $group) {
+            $session = DutySession::find($sessionId);
+
+            $outcome = $this->attendance->markAbsentMany($session, $group->pluck('id')->all(), $request->user());
+
+            if (! empty($outcome['session_not_active'])) {
+                $skippedClosed += $group->count();
+
+                continue;
+            }
+
+            $marked += count($outcome['marked']);
+            $skippedPresent += count($outcome['skipped_present']);
+        }
+
+        return redirect()->route('reports.builder', $request->query())
+            ->with('flash_success', $marked.' marked Absent.'
+                .($skippedPresent > 0 ? ' '.$skippedPresent.' skipped (already Present).' : '')
+                .($skippedClosed > 0 ? ' '.$skippedClosed.' skipped (session not active).' : ''));
     }
 
     public function builderPdf(Request $request): Response
@@ -224,6 +323,7 @@ class ReportController extends Controller
             'department_id' => $request->query('department_id'),
             'operator_id' => $request->query('operator_id'),
             'status' => $request->query('status'),
+            'gender' => $request->query('gender'),
         ]);
     }
 

@@ -53,14 +53,25 @@
                     </div>
                 </div>
 
-                <div>
-                    <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{{ __('Attendance Status') }}</h3>
-                    <select id="status" name="status" class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                        <option value="">{{ __('Any status') }}</option>
-                        @foreach (['present' => 'Present', 'absent' => 'Absent', 'pending' => 'Pending'] as $value => $label)
-                            <option value="{{ $value }}" @selected(($filters['status'] ?? '') === $value)>{{ $label }}</option>
-                        @endforeach
-                    </select>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{{ __('Attendance Status') }}</h3>
+                        <select id="status" name="status" class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">{{ __('Any status') }}</option>
+                            @foreach (['present' => 'Present', 'absent' => 'Absent', 'pending' => 'Pending'] as $value => $label)
+                                <option value="{{ $value }}" @selected(($filters['status'] ?? '') === $value)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{{ __('Gender') }}</h3>
+                        <select id="gender" name="gender" class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">{{ __('Any gender') }}</option>
+                            @foreach ($genderOptions as $g)
+                                <option value="{{ $g }}" @selected(($filters['gender'] ?? '') === $g)>{{ $g }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
 
                 <div class="flex gap-3">
@@ -71,6 +82,13 @@
                 </div>
             </form>
         </x-shell.card>
+
+        @foreach (['flash_success' => 'green', 'flash_info' => 'blue', 'flash_warning' => 'orange', 'flash_error' => 'red'] as $key => $tone)
+            @if (session($key))
+                @php $bg = ['green' => 'bg-emerald-50 text-emerald-700', 'blue' => 'bg-blue-50 text-blue-700', 'orange' => 'bg-orange-50 text-orange-700', 'red' => 'bg-red-50 text-red-700'][$tone]; @endphp
+                <div class="rounded-2xl {{ $bg }} p-4 text-sm">{{ session($key) }}</div>
+            @endif
+        @endforeach
 
         @if (! empty($filters))
             <div class="flex flex-wrap gap-1.5 text-xs">
@@ -97,10 +115,20 @@
             @if ($results->isEmpty())
                 <x-shell.empty-state title="{{ __('No assignments match these filters') }}" description="{{ __('Try widening the date range or clearing a filter.') }}" />
             @else
+                @can('mark_attendance')
+                    @php $qs = request()->getQueryString(); @endphp
+                    <form id="bulk-attendance-form" method="POST" action="{{ route('reports.builder.mark-present').($qs ? '?'.$qs : '') }}">
+                        @csrf
+                @endcan
                 <div class="overflow-x-auto">
                     <table class="w-full min-w-[640px] text-left text-sm">
                         <thead>
                             <tr class="border-b border-slate-100 text-xs text-slate-400">
+                                @can('mark_attendance')
+                                    <th class="py-2 pr-3">
+                                        <input type="checkbox" id="select-all-rows" class="rounded border-slate-300">
+                                    </th>
+                                @endcan
                                 <th class="py-2 pr-3">{{ __('ITS') }}</th>
                                 <th class="py-2 pr-3">{{ __('Name') }}</th>
                                 <th class="py-2 pr-3">{{ __('Department') }}</th>
@@ -110,7 +138,16 @@
                         </thead>
                         <tbody>
                             @foreach ($results as $row)
+                                @php $sessionActive = $row->dutySession?->status === 'active'; @endphp
                                 <tr class="border-b border-slate-50">
+                                    @can('mark_attendance')
+                                        <td class="py-2 pr-3">
+                                            <input type="checkbox" name="assignment_ids[]" value="{{ $row->id }}"
+                                                class="row-checkbox rounded border-slate-300"
+                                                @disabled(! $sessionActive)
+                                                @if(! $sessionActive) title="{{ __('Session closed') }}" @endif>
+                                        </td>
+                                    @endcan
                                     <td class="py-2 pr-3 tabular-nums text-slate-600">{{ $row->khidmatguzar?->its_id }}</td>
                                     <td class="py-2 pr-3 text-slate-900">{{ $row->khidmatguzar?->full_name ?? $row->full_name_snapshot }}</td>
                                     <td class="py-2 pr-3 text-slate-600">{{ $row->department?->name }}</td>
@@ -124,6 +161,49 @@
                     </table>
                 </div>
                 <div class="mt-3">{{ $results->links() }}</div>
+                @can('mark_attendance')
+                    <div class="mt-3 flex items-center gap-2">
+                        <button type="submit" formaction="{{ route('reports.builder.mark-present').($qs ? '?'.$qs : '') }}"
+                            id="bulk-mark-present" disabled
+                            class="kg-tap rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40">
+                            {{ __('Mark Present') }}
+                        </button>
+                        <button type="submit" formaction="{{ route('reports.builder.mark-absent').($qs ? '?'.$qs : '') }}"
+                            id="bulk-mark-absent" disabled
+                            class="kg-tap rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40">
+                            {{ __('Mark Absent') }}
+                        </button>
+                        <span id="bulk-selected-count" class="text-xs text-slate-400"></span>
+                    </div>
+                    </form>
+
+                    <script>
+                        (function () {
+                            const form = document.getElementById('bulk-attendance-form');
+                            if (! form) return;
+
+                            const selectAll = document.getElementById('select-all-rows');
+                            const rowCheckboxes = Array.from(form.querySelectorAll('.row-checkbox:not(:disabled)'));
+                            const presentBtn = document.getElementById('bulk-mark-present');
+                            const absentBtn = document.getElementById('bulk-mark-absent');
+                            const countLabel = document.getElementById('bulk-selected-count');
+
+                            function refresh() {
+                                const checked = rowCheckboxes.filter(cb => cb.checked).length;
+                                presentBtn.disabled = checked === 0;
+                                absentBtn.disabled = checked === 0;
+                                countLabel.textContent = checked > 0 ? checked + ' selected' : '';
+                            }
+
+                            selectAll?.addEventListener('change', () => {
+                                rowCheckboxes.forEach(cb => { cb.checked = selectAll.checked; });
+                                refresh();
+                            });
+
+                            rowCheckboxes.forEach(cb => cb.addEventListener('change', refresh));
+                        })();
+                    </script>
+                @endcan
             @endif
         </x-shell.card>
     </div>

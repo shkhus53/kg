@@ -212,6 +212,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/reports/builder', [ReportController::class, 'builder'])->name('reports.builder');
         Route::get('/reports/builder/pdf', [ReportController::class, 'builderPdf'])->name('reports.builder.pdf');
         Route::get('/reports/builder/excel', [ReportController::class, 'builderExcel'])->name('reports.builder.excel');
+
+        Route::middleware('can:mark_attendance')->group(function () {
+            Route::post('/reports/builder/mark-present', [ReportController::class, 'builderMarkPresent'])->name('reports.builder.mark-present');
+            Route::post('/reports/builder/mark-absent', [ReportController::class, 'builderMarkAbsent'])->name('reports.builder.mark-absent');
+        });
     });
 });
 

@@ -162,6 +162,86 @@ class AttendanceService
     }
 
     /**
+     * Mark a selected set of Pending assignments Absent in one transaction.
+     * Present -> Absent is never allowed (see markAbsent) so those rows are
+     * skipped, not rejected — the caller gets the full breakdown back.
+     *
+     * @param  array<int>  $assignmentIds
+     * @return array{marked: array<int>, already_absent: array<int>, skipped_present: array<int>, not_found: array<int>}
+     */
+    public function markAbsentMany(DutySession $session, array $assignmentIds, User $actor): array
+    {
+        return DB::transaction(function () use ($session, $assignmentIds, $actor) {
+            $lockedSession = DutySession::whereKey($session->id)->lockForUpdate()->first();
+
+            $outcome = ['marked' => [], 'already_absent' => [], 'skipped_present' => [], 'not_found' => []];
+
+            if (! $lockedSession->isActive()) {
+                $outcome['session_not_active'] = true;
+
+                return $outcome;
+            }
+
+            $assignments = DutyAssignment::whereIn('id', $assignmentIds)
+                ->where('duty_session_id', $session->id)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            $now = now();
+            $toMark = [];
+
+            foreach ($assignmentIds as $id) {
+                $assignment = $assignments->get($id);
+
+                if (! $assignment) {
+                    $outcome['not_found'][] = $id;
+
+                    continue;
+                }
+
+                if ($assignment->current_status === 'present') {
+                    $outcome['skipped_present'][] = $id;
+
+                    continue;
+                }
+
+                if ($assignment->current_status === 'absent') {
+                    $outcome['already_absent'][] = $id;
+
+                    continue;
+                }
+
+                $toMark[] = $assignment;
+                $outcome['marked'][] = $id;
+            }
+
+            if ($toMark !== []) {
+                DutyAssignment::whereIn('id', array_map(fn ($a) => $a->id, $toMark))->update([
+                    'current_status' => 'absent',
+                    'attendance_marked_at' => $now,
+                    'attendance_marked_by' => $actor->id,
+                ]);
+
+                AttendanceEvent::insert(array_map(fn ($a) => [
+                    'duty_assignment_id' => $a->id,
+                    'duty_session_id' => $session->id,
+                    'khidmatguzar_id' => $a->khidmatguzar_id,
+                    'action' => 'absent',
+                    'context' => 'bulk',
+                    'performed_by' => $actor->id,
+                    'performed_at' => $now,
+                    'remark' => null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ], $toMark));
+            }
+
+            return $outcome;
+        });
+    }
+
+    /**
      * Mark every currently-Pending assignment in this session Absent, in
      * one transaction. Idempotent: a second call with nothing left pending
      * returns 'nothing_pending' and mutates nothing.

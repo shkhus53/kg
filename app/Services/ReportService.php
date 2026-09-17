@@ -148,14 +148,16 @@ class ReportService
     public function attendanceDetailQuery(array $filters): Builder
     {
         return DutyAssignment::query()
-            ->with(['khidmatguzar:id,its_id,full_name', 'department:id,name', 'dutySession:id,name,date'])
+            ->with(['khidmatguzar:id,its_id,full_name', 'department:id,name', 'dutySession:id,name,date,status'])
             ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+            ->join('khidmatguzars', 'khidmatguzars.id', '=', 'duty_assignments.khidmatguzar_id')
             ->when($filters['from'] ?? null, fn ($q, $from) => $q->whereDate('duty_sessions.date', '>=', $from))
             ->when($filters['to'] ?? null, fn ($q, $to) => $q->whereDate('duty_sessions.date', '<=', $to))
             ->when($filters['session_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.duty_session_id', $id))
             ->when($filters['department_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.department_id', $id))
             ->when($filters['operator_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.attendance_marked_by', $id))
             ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('duty_assignments.current_status', $status))
+            ->when($filters['gender'] ?? null, fn ($q, $gender) => $q->whereRaw(Gender::caseSql('khidmatguzars.gender').' = ?', [$gender]))
             ->orderByDesc('duty_sessions.date')->orderBy('duty_assignments.id')
             ->select('duty_assignments.*');
     }
@@ -171,12 +173,14 @@ class ReportService
     {
         $totals = DutyAssignment::query()
             ->join('duty_sessions', 'duty_sessions.id', '=', 'duty_assignments.duty_session_id')
+            ->join('khidmatguzars', 'khidmatguzars.id', '=', 'duty_assignments.khidmatguzar_id')
             ->when($filters['from'] ?? null, fn ($q, $from) => $q->whereDate('duty_sessions.date', '>=', $from))
             ->when($filters['to'] ?? null, fn ($q, $to) => $q->whereDate('duty_sessions.date', '<=', $to))
             ->when($filters['session_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.duty_session_id', $id))
             ->when($filters['department_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.department_id', $id))
             ->when($filters['operator_id'] ?? null, fn ($q, $id) => $q->where('duty_assignments.attendance_marked_by', $id))
             ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('duty_assignments.current_status', $status))
+            ->when($filters['gender'] ?? null, fn ($q, $gender) => $q->whereRaw(Gender::caseSql('khidmatguzars.gender').' = ?', [$gender]))
             ->selectRaw("
                 COUNT(*) as scheduled,
                 SUM(current_status = 'present') as present,
