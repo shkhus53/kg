@@ -90,6 +90,14 @@
             @endif
         @endforeach
 
+        {{-- Offline bulk-mark queue status. Only ever populated for sessions
+             already cached by visiting Live Attendance/Pending while online
+             — see resources/js/offline.js and the script below. --}}
+        <div id="offline-queue-banner" hidden class="rounded-2xl bg-orange-50 p-4 text-sm text-orange-700">
+            <span data-queue-text></span>
+            <button type="button" id="offline-sync-now" class="ml-2 font-semibold underline">{{ __('Sync now') }}</button>
+        </div>
+
         @if (! empty($filters))
             <div class="flex flex-wrap gap-1.5 text-xs">
                 @foreach ($filters as $key => $value)
@@ -178,7 +186,14 @@
                     </form>
 
                     <script>
-                        (function () {
+                        // Waits for DOMContentLoaded: this inline script runs
+                        // synchronously during HTML parsing, but window.KGOffline
+                        // comes from app.js, a Vite <script type="module"> in
+                        // <head> — module scripts are always deferred until
+                        // parsing finishes. Running immediately would find
+                        // KGOffline undefined every time (see the same fix in
+                        // attendance/live.blade.php and attendance/pending.blade.php).
+                        document.addEventListener('DOMContentLoaded', function () {
                             const form = document.getElementById('bulk-attendance-form');
                             if (! form) return;
 
@@ -201,7 +216,88 @@
                             });
 
                             rowCheckboxes.forEach(cb => cb.addEventListener('change', refresh));
-                        })();
+
+                            // Offline fallback: rows here can span MULTIPLE
+                            // duty sessions at once (unlike Live Attendance/
+                            // Pending, which are always one session). Each
+                            // queued event carries the assignment's OWN
+                            // cached session_id (offline.js markAttendance),
+                            // not a fixed one, so this works as long as that
+                            // particular assignment's session was already
+                            // cached by opening Live Attendance/Pending for
+                            // it while online — otherwise it's skipped with
+                            // a count, not silently dropped.
+                            if (!window.KGOffline) return;
+                            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+                            const offline = new window.KGOffline.OfflineAttendance({ sessionId: 0, userId: {{ auth()->id() }}, csrfToken: csrfToken });
+                            window.kgOffline = offline;
+                            offline.startAutoSync();
+
+                            const banner = document.getElementById('offline-queue-banner');
+
+                            function refreshBanner() {
+                                offline.queueSummary().then(function (s) {
+                                    const pending = s.queued + s.syncing;
+                                    const issues = s.conflict + s.rejected + s.operator_mismatch + s.blocked;
+                                    if (pending + issues > 0) {
+                                        banner.hidden = false;
+                                        banner.querySelector('[data-queue-text]').textContent =
+                                            pending + ' attendance action(s) waiting to sync' + (issues ? ', ' + issues + ' need review' : '') + '.';
+                                    } else {
+                                        banner.hidden = true;
+                                    }
+                                });
+                            }
+
+                            offline.onChange(refreshBanner);
+                            refreshBanner();
+                            document.getElementById('offline-sync-now').addEventListener('click', function () {
+                                offline.sync({ manual: true }).then(refreshBanner);
+                            });
+
+                            form.addEventListener('submit', function (e) {
+                                e.preventDefault();
+                                const submitter = e.submitter;
+                                const action = submitter === absentBtn ? 'absent' : 'present';
+                                const targetUrl = (submitter && submitter.formAction) || form.action;
+                                const assignmentIds = rowCheckboxes.filter(cb => cb.checked).map(cb => parseInt(cb.value, 10));
+                                if (!assignmentIds.length) return;
+
+                                const ctrl = new AbortController();
+                                const timeout = setTimeout(() => ctrl.abort(), 4000);
+
+                                fetch(targetUrl, {
+                                    method: 'POST',
+                                    credentials: 'same-origin',
+                                    redirect: 'follow',
+                                    signal: ctrl.signal,
+                                    headers: { 'X-CSRF-TOKEN': csrfToken },
+                                    body: new FormData(form),
+                                }).then(function (res) {
+                                    clearTimeout(timeout);
+                                    if (res.ok || res.redirected) {
+                                        window.location.href = res.url || window.location.href;
+                                    } else {
+                                        return Promise.reject(new Error('http_' + res.status));
+                                    }
+                                }).catch(function () {
+                                    clearTimeout(timeout);
+                                    Promise.allSettled(assignmentIds.map((id) => offline.markAttendance(id, action, null))).then(function (results) {
+                                        const queued = results.filter((r) => r.status === 'fulfilled').length;
+                                        const skipped = results.length - queued;
+                                        const note = document.createElement('p');
+                                        note.className = 'mt-2 text-xs font-semibold text-orange-600';
+                                        note.textContent = queued + ' queued offline — will sync automatically when connection returns.'
+                                            + (skipped ? ' ' + skipped + ' skipped (not cached for offline use — reconnect to mark those).' : '');
+                                        form.appendChild(note);
+                                        presentBtn.disabled = true;
+                                        absentBtn.disabled = true;
+                                        rowCheckboxes.forEach((cb) => { cb.disabled = true; });
+                                        refreshBanner();
+                                    });
+                                });
+                            });
+                        });
                     </script>
                 @endcan
             @endif

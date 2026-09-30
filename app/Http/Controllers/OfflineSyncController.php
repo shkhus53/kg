@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Department;
 use App\Models\DutyAssignment;
 use App\Models\DutySession;
+use App\Models\ExtraPresent;
+use App\Models\Khidmatguzar;
 use App\Services\OfflineSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -52,6 +54,15 @@ class OfflineSyncController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
+        // Small enough (a few hundred rows, never thousands for this app) to
+        // cache the whole directory on every provision — lets offline Extra
+        // Present enrich a not-on-roster ITS with a known name/gender without
+        // needing a separate, much larger sync mechanism.
+        $directory = Khidmatguzar::all(['id', 'its_id', 'full_name', 'gender']);
+
+        $extraPresents = ExtraPresent::where('duty_session_id', $dutySession->id)
+            ->get(['id', 'khidmatguzar_id', 'its_id_snapshot', 'full_name_snapshot', 'department_name_snapshot', 'marked_at']);
+
         return response()->json([
             'session' => [
                 'id' => $dutySession->id,
@@ -63,6 +74,8 @@ class OfflineSyncController extends Controller
             ],
             'assignments' => $assignments->values(),
             'departments' => $departments,
+            'directory' => $directory,
+            'extra_presents' => $extraPresents,
             'package_version' => (string) Str::uuid(),
             'provisioned_at' => now()->toIso8601String(),
         ]);

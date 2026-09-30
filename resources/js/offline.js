@@ -17,7 +17,7 @@
  */
 
 const DB_NAME = 'kg-attendance';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const SYNC_BATCH_SIZE = 25;
 const HEARTBEAT_URL = '/up';
 const SYNC_URL = '/sync/attendance-events';
@@ -54,6 +54,17 @@ function openDb() {
             }
             if (!db.objectStoreNames.contains('device')) {
                 db.createObjectStore('device', { keyPath: 'key' });
+            }
+            // v2: whole-directory + this-session's-Extra-Present cache, so
+            // offline Extra Present can enrich/dedupe a not-on-roster ITS
+            // without a separate provisioning mechanism (see provision()).
+            if (!db.objectStoreNames.contains('directory')) {
+                const store = db.createObjectStore('directory', { keyPath: 'khidmatguzar_id' });
+                store.createIndex('its_id', 'its_id');
+            }
+            if (!db.objectStoreNames.contains('extra_presents')) {
+                const store = db.createObjectStore('extra_presents', { keyPath: 'extra_present_id' });
+                store.createIndex('session_id', 'session_id');
             }
         };
 
@@ -151,7 +162,7 @@ class OfflineAttendance {
 
         const data = await res.json();
         const db = await openDb();
-        const t = tx(db, ['provisioned_session', 'provisioned_assignments', 'provisioned_departments', 'local_attendance_state'], 'readwrite');
+        const t = tx(db, ['provisioned_session', 'provisioned_assignments', 'provisioned_departments', 'local_attendance_state', 'directory', 'extra_presents'], 'readwrite');
 
         t.objectStore('provisioned_session').put({
             session_id: data.session.id,
@@ -173,8 +184,37 @@ class OfflineAttendance {
             stateStore.put({ assignment_id: a.assignment_id, status: a.current_status, source: 'provisioned' });
         });
 
+        // Pre-existing bug fixed here: the server sends {id, name} but this
+        // store's keyPath is 'department_id' — passing the raw object threw
+        // a synchronous DataError on the very first row (the key path
+        // evaluates to undefined), silently aborting the rest of provision()
+        // every single time, since the caller swallows this rejection (see
+        // `offline.provision().catch(() => {})` call sites). Assignments/
+        // session data still committed (queued before this line), which is
+        // why search/mark kept working despite provisioned_departments
+        // always being empty.
         const deptStore = t.objectStore('provisioned_departments');
-        data.departments.forEach((d) => deptStore.put(d));
+        data.departments.forEach((d) => deptStore.put({ department_id: d.id, name: d.name }));
+
+        // Directory is global (not session-scoped) — plain upsert, no clear.
+        const directoryStore = t.objectStore('directory');
+        (data.directory || []).forEach((k) => directoryStore.put({ khidmatguzar_id: k.id, its_id: k.its_id, full_name: k.full_name, gender: k.gender }));
+
+        // Extra Present records ARE session-scoped — clear this session's
+        // prior snapshot first, same as assignments above.
+        const epStore = t.objectStore('extra_presents');
+        const epIdx = epStore.index('session_id');
+        const existingEpKeys = await reqToPromise(epIdx.getAllKeys(IDBKeyRange.only(data.session.id)));
+        existingEpKeys.forEach((k) => epStore.delete(k));
+        (data.extra_presents || []).forEach((ep) => epStore.put({
+            extra_present_id: ep.id,
+            session_id: data.session.id,
+            khidmatguzar_id: ep.khidmatguzar_id,
+            its_id: ep.its_id_snapshot,
+            full_name: ep.full_name_snapshot,
+            department_name: ep.department_name_snapshot,
+            marked_at: ep.marked_at,
+        }));
 
         await new Promise((resolve, reject) => {
             t.oncomplete = resolve;
@@ -224,6 +264,26 @@ class OfflineAttendance {
         return matches.map((a) => ({ ...a, current_status: state[a.assignment_id] || a.current_status }));
     }
 
+    /** Known-person enrichment for an ITS not on this session's roster — global directory, not session-scoped. */
+    async lookupDirectory(its) {
+        const db = await openDb();
+        const rows = await reqToPromise(tx(db, ['directory']).objectStore('directory').index('its_id').getAll(IDBKeyRange.only(its)));
+        return rows[0] || null;
+    }
+
+    /** Already-recorded-as-Extra-Present check, scoped to this instance's session. */
+    async isAlreadyExtraPresent(its) {
+        const db = await openDb();
+        const rows = await reqToPromise(tx(db, ['extra_presents']).objectStore('extra_presents').index('session_id').getAll(IDBKeyRange.only(this.sessionId)));
+        return rows.find((r) => r.its_id === its) || null;
+    }
+
+    /** This session's cached department list — used to populate the offline Extra Present form. */
+    async listDepartments() {
+        const db = await openDb();
+        return reqToPromise(tx(db, ['provisioned_departments']).objectStore('provisioned_departments').getAll());
+    }
+
     async _loadState(db) {
         const rows = await reqToPromise(tx(db, ['local_attendance_state']).objectStore('local_attendance_state').getAll());
         const map = {};
@@ -245,7 +305,12 @@ class OfflineAttendance {
 
         const event = {
             event_id: uuid(),
-            session_id: this.sessionId,
+            // The assignment's OWN cached session_id, not this.sessionId —
+            // a page like Report Builder spans multiple sessions at once,
+            // so the instance's constructor sessionId cannot be trusted
+            // here. Single-session pages (Live Attendance, Pending) always
+            // have assignment.session_id === this.sessionId anyway.
+            session_id: assignment.session_id,
             assignment_id: assignmentId,
             khidmatguzar_id: assignment.khidmatguzar_id,
             operator_user_id: this.userId,

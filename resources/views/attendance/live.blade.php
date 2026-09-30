@@ -159,7 +159,7 @@
 
                         @if ($dutySession->isActive())
                             @can('mark_attendance')
-                                <form method="POST" action="{{ route('attendance.absent', $dutySession) }}" class="mt-2 js-attendance-form" data-offline-action="absent" data-assignment-id="{{ $assignment->id }}" onsubmit="return confirm('{{ __('Mark this person Absent?') }}')">
+                                <form method="POST" action="{{ route('attendance.absent', $dutySession) }}" class="mt-2 js-attendance-form" data-offline-action="absent" data-assignment-id="{{ $assignment->id }}" data-confirm-message="{{ __('Mark this person Absent?') }}">
                                     @csrf
                                     <input type="hidden" name="assignment_id" value="{{ $assignment->id }}">
                                     <input type="hidden" name="its" value="{{ $itsId }}">
@@ -386,6 +386,13 @@
             @else
             var labelMarkSelectedPresent = '';
             @endcanany
+            @can('mark_extra_present')
+            var canMarkExtraPresent = true;
+            var labelMarkExtraPresent = '{{ __('Mark Extra Present') }}';
+            @else
+            var canMarkExtraPresent = false;
+            var labelMarkExtraPresent = '';
+            @endcan
 
             offline.provision().catch(function () {}); // best-effort; if we're already offline on load there's nothing to provision yet
             offline.startAutoSync();
@@ -460,6 +467,14 @@
                     var assignmentId = parseInt(form.dataset.assignmentId, 10);
                     var remarkField = form.querySelector('[name="remark"]');
                     var remark = remarkField ? remarkField.value : null;
+
+                    // The confirm() check lives HERE, not in an onsubmit=
+                    // attribute — a cancelled onsubmit doesn't stop other
+                    // submit listeners from running, so a form with both
+                    // would still queue/send the action even after Cancel.
+                    if (form.dataset.confirmMessage && !confirm(form.dataset.confirmMessage)) {
+                        return;
+                    }
 
                     var ctrl = new AbortController();
                     var timeout = setTimeout(function () { ctrl.abort(); }, 4000);
@@ -616,8 +631,7 @@
 
             function renderItsResult(its, matches) {
                 if (matches.length === 0) {
-                    offlineResultBox.innerHTML = offlineNotice('ITS ' + escapeHtml(its) + ' is not on this session\'s cached list. Reconnect to search the full directory or record Extra Present.');
-                    return;
+                    return renderNotOnRoster(its);
                 }
 
                 if (matches.length === 1) {
@@ -628,6 +642,105 @@
 
                 offlineResultBox.innerHTML = renderMultiList(its, matches);
                 wireMultiList(matches);
+            }
+
+            // Not on this session's scheduled roster — check the cached
+            // whole-directory + this session's Extra Present records before
+            // deciding what to show, same three states the server-rendered
+            // page has (already extra present / can record one / read-only).
+            async function renderNotOnRoster(its) {
+                var already = await offline.isAlreadyExtraPresent(its);
+                if (already) {
+                    offlineResultBox.innerHTML = '<div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">' +
+                        '<p class="font-semibold text-violet-700">Already marked Extra Present</p>' +
+                        '<p class="mt-1 text-xs text-slate-500">' + escapeHtml(already.full_name) + ' &middot; ' + escapeHtml(already.department_name) + '</p></div>';
+                    return;
+                }
+
+                if (!canMarkExtraPresent) {
+                    offlineResultBox.innerHTML = offlineNotice('ITS ' + escapeHtml(its) + ' is not on this session\'s cached list.');
+                    return;
+                }
+
+                var known = await offline.lookupDirectory(its);
+                var departments = await offline.listDepartments();
+                offlineResultBox.innerHTML = renderExtraPresentForm(its, known, departments);
+                wireExtraPresentForm(its, known);
+            }
+
+            function renderExtraPresentForm(its, known, departments) {
+                var knownGender = known ? (known.gender === 'M' || known.gender === 'Male' ? 'Male' : known.gender === 'F' || known.gender === 'Female' ? 'Female' : null) : null;
+
+                var html = '<div class="rounded-2xl border border-orange-100 bg-orange-50/40 p-5 shadow-sm" id="offline-extra-present">' +
+                    '<div class="flex items-center justify-between">' +
+                    '<div><p class="font-semibold text-orange-700">Not in Today\'s List</p>' +
+                    '<p class="text-xs text-slate-500">ITS Number: ' + escapeHtml(its) + '</p></div></div>';
+
+                if (known) {
+                    html += '<p class="mt-3 text-xs text-slate-500">Known person: ' + escapeHtml(known.full_name) + '.</p>';
+                }
+                html += '<p class="mt-1 text-[11px] text-slate-400">Offline — showing this device\'s saved roster only.</p>';
+
+                if (!known) {
+                    html += '<div class="mt-4"><label class="block text-xs font-medium text-slate-700 mb-1">Full Name</label>' +
+                        '<input type="text" data-ep-full-name class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required></div>';
+                }
+
+                html += '<div class="mt-4"><label class="block text-xs font-medium text-slate-700 mb-1">Gender</label>' +
+                    '<select data-ep-gender required class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">' +
+                    '<option value="">Choose gender…</option>' +
+                    '<option value="Male"' + (knownGender === 'Male' ? ' selected' : '') + '>Male</option>' +
+                    '<option value="Female"' + (knownGender === 'Female' ? ' selected' : '') + '>Female</option>' +
+                    '</select></div>';
+
+                var deptOptions = departments.map(function (d) {
+                    return '<option value="' + d.department_id + '">' + escapeHtml(d.name) + '</option>';
+                }).join('');
+                html += '<div class="mt-4"><label class="block text-xs font-medium text-slate-700 mb-1">Select Department</label>' +
+                    '<select data-ep-department required class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">' +
+                    '<option value="">Choose department…</option>' + deptOptions + '</select>' +
+                    '<p class="mt-1 text-[11px] text-slate-400">Populated from this session\'s cached departments.</p></div>';
+
+                html += '<div class="mt-4"><label class="block text-xs font-medium text-slate-700 mb-1">Remarks (optional)</label>' +
+                    '<textarea data-ep-remark rows="2" maxlength="500" class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"></textarea></div>';
+
+                html += '<button type="button" data-ep-submit class="kg-tap mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white hover:bg-orange-600">' + escapeHtml(labelMarkExtraPresent) + '</button>';
+
+                return html + '</div>';
+            }
+
+            function wireExtraPresentForm(its, known) {
+                var box = document.getElementById('offline-extra-present');
+                if (!box) return;
+                var btn = box.querySelector('[data-ep-submit]');
+
+                btn.addEventListener('click', function () {
+                    var fullNameInput = box.querySelector('[data-ep-full-name]');
+                    var fullName = known ? known.full_name : (fullNameInput ? fullNameInput.value.trim() : '');
+                    var gender = box.querySelector('[data-ep-gender]').value;
+                    var departmentId = box.querySelector('[data-ep-department]').value;
+                    var remark = box.querySelector('[data-ep-remark]').value;
+
+                    if (!fullName || !gender || !departmentId) {
+                        alert('Full Name, Gender, and Department are required.');
+                        return;
+                    }
+
+                    offline.markExtraPresent({
+                        its: its,
+                        fullName: fullName,
+                        gender: gender,
+                        departmentId: parseInt(departmentId, 10),
+                        remark: remark,
+                    }).then(function () {
+                        box.querySelectorAll('button, input, select, textarea').forEach(function (el) { el.disabled = true; });
+                        var note = document.createElement('p');
+                        note.className = 'mt-2 text-xs font-semibold text-orange-600';
+                        note.textContent = '{{ __('Saved offline — will sync automatically when connection returns.') }}';
+                        box.appendChild(note);
+                        refreshUi();
+                    });
+                });
             }
 
             function renderSingleCard(a) {
