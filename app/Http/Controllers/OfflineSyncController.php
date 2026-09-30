@@ -74,14 +74,20 @@ class OfflineSyncController extends Controller
      */
     public function sync(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        // Deliberately validate() for shape only, then read the RAW input for
+        // processing — Laravel's validated() strips every key on each array
+        // item that has no rule of its own, so wildcard rules limited to
+        // event_id/session_id/action here would silently drop
+        // assignment_id/operator_user_id/payload/etc before they ever reach
+        // OfflineSyncService, which needs every one of those fields.
+        $request->validate([
             'events' => ['required', 'array', 'max:200'],
             'events.*.event_id' => ['required', 'string'],
             'events.*.session_id' => ['nullable', 'integer'],
             'events.*.action' => ['required', 'string'],
         ]);
 
-        $results = $this->offlineSync->processBatch($validated['events'], $request->user());
+        $results = $this->offlineSync->processBatch($request->input('events'), $request->user());
 
         return response()->json(['results' => $results]);
     }

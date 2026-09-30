@@ -61,7 +61,7 @@
         </div>
 
         <x-shell.card>
-            <form method="GET" action="{{ route('attendance.shell.live', $dutySession) }}" class="space-y-3">
+            <form method="GET" action="{{ route('attendance.shell.live', $dutySession) }}" class="space-y-3 js-search-form" data-search-mode="its">
                 <div>
                     <x-input-label for="its" :value="__('Enter ITS Number')" />
                     <x-text-input id="its" name="its" type="text" inputmode="numeric" maxlength="20" class="mt-1 block w-full text-center text-lg tracking-widest" :value="$itsId" placeholder="8 digit ITS number" />
@@ -73,12 +73,16 @@
                 <div class="h-px flex-1 bg-slate-100"></div>{{ __('or') }}<div class="h-px flex-1 bg-slate-100"></div>
             </div>
 
-            <form method="GET" action="{{ route('attendance.shell.live', $dutySession) }}" class="space-y-3">
+            <form method="GET" action="{{ route('attendance.shell.live', $dutySession) }}" class="space-y-3 js-search-form" data-search-mode="name">
                 <x-text-input name="name" type="text" class="block w-full" :value="$nameQuery" placeholder="{{ __('Search by Name') }}" />
                 <x-shell.button tone="outline" type="submit">{{ __('Search by Name') }}</x-shell.button>
             </form>
         </x-shell.card>
 
+        {{-- Phase 3: offline client-rendered search result (see script below). Hidden unless a search form's preflight fetch fails. --}}
+        <div id="offline-search-result" class="space-y-5" hidden></div>
+
+        <div id="server-search-result" class="space-y-5">
         {{-- Name search results --}}
         @if (! is_null($nameMatches))
             <x-shell.card>
@@ -326,11 +330,19 @@
                 </x-shell.card>
             @endif
         @endif
+        </div>
     </div>
 
     @if ($dutySession->isActive())
         <script>
-        (function () {
+        // Waits for DOMContentLoaded rather than running immediately: this
+        // inline script executes synchronously during HTML parsing, but
+        // window.KGOffline comes from app.js, loaded as a Vite <script
+        // type="module"> in <head> — module scripts are always deferred
+        // until parsing finishes. Running immediately would find KGOffline
+        // undefined on every single page load and silently no-op the whole
+        // offline engine (provisioning, queueing, sync, badge).
+        document.addEventListener('DOMContentLoaded', function () {
             if (!window.KGOffline) return; // offline.js failed to load — every form still works as a normal POST, no behavior change.
 
             var sessionId = {{ $dutySession->id }};
@@ -338,6 +350,42 @@
             var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
             var offline = new window.KGOffline.OfflineAttendance({ sessionId: sessionId, userId: userId, csrfToken: csrfToken });
             window.kgOffline = offline;
+
+            // Mirrors the same permission gates the server enforces, so
+            // offline-rendered (client-side) search results show the same
+            // action buttons a server-rendered page would. Booleans only, no
+            // authorization decision is ever made client-side; the server
+            // re-checks everything again on sync (see OfflineSyncService).
+            var canMarkAttendance = {{ auth()->user()->hasPermission('mark_attendance') ? 'true' : 'false' }};
+            var canCorrectAttendance = {{ auth()->user()->hasPermission('correct_attendance') ? 'true' : 'false' }};
+
+            // Button label TEXT is gated server-side too, not just the
+            // buttons themselves — an unauthorized actor's HTTP response must
+            // never contain the mutation button wording at all (matches the
+            // same rule the server-rendered forms already follow via the can
+            // directive; see AttendanceMutationVisibilityTest). A
+            // client-side `if (canMarkAttendance)` alone would still ship
+            // the literal label text to every viewer inside this script's
+            // source, whether or not that branch ever runs.
+            @can('mark_attendance')
+            var labelMarkPresent = '{{ __('Mark Present') }}';
+            var labelMarkAbsent = '{{ __('Mark Absent') }}';
+            @else
+            var labelMarkPresent = '';
+            var labelMarkAbsent = '';
+            @endcan
+            @can('correct_attendance')
+            var labelCorrectToPresent = '{{ __('Mark Present') }}';
+            var labelCorrectHint = '{{ __('Person arrived late? Correct this to Present.') }}';
+            @else
+            var labelCorrectToPresent = '';
+            var labelCorrectHint = '';
+            @endcan
+            @canany(['mark_attendance', 'correct_attendance'])
+            var labelMarkSelectedPresent = '{{ __('Mark Selected Present') }}';
+            @else
+            var labelMarkSelectedPresent = '';
+            @endcanany
 
             offline.provision().catch(function () {}); // best-effort; if we're already offline on load there's nothing to provision yet
             offline.startAutoSync();
@@ -452,10 +500,11 @@
             }
 
             // Extra Present: can be queued offline once this form has already
-            // been reached while online (search itself still requires
-            // connectivity — starting a brand-new Extra Present lookup from a
-            // fully offline cold start is not supported in this phase, since
-            // it needs a client-rendered search UI that doesn't exist yet).
+            // been reached while online. Unlike the ITS/name search below,
+            // Extra Present lookup is NOT client-rendered offline — it needs
+            // an arbitrary Khidmatguzar + ExtraPresent lookup that is never
+            // provisioned locally (only this session's roster is). Starting a
+            // brand-new Extra Present entry fully offline stays unsupported.
             document.querySelectorAll('.js-extra-present-form').forEach(function (form) {
                 form.addEventListener('submit', function (e) {
                     e.preventDefault();
@@ -493,7 +542,245 @@
                     });
                 });
             });
-        })();
+
+            // Offline search (Phase 3): ITS/name lookup is a plain GET
+            // navigation online (unchanged below). Only when a real network
+            // attempt for that navigation fails do we render the result
+            // client-side from the already-provisioned IndexedDB roster —
+            // same states as the server-rendered blocks above, scoped to
+            // what provision() actually cached (this session's assignments).
+            var serverResultBox = document.getElementById('server-search-result');
+            var offlineResultBox = document.getElementById('offline-search-result');
+
+            function escapeHtml(s) {
+                return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            }
+
+            function statusBadge(status) {
+                var tone = status === 'present' ? 'bg-emerald-100 text-emerald-700' : status === 'absent' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700';
+                var dot = status === 'present' ? 'bg-emerald-500' : status === 'absent' ? 'bg-red-500' : 'bg-orange-500';
+                return '<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ' + tone + '"><span class="h-1.5 w-1.5 shrink-0 rounded-full ' + dot + '"></span>' + escapeHtml(status) + '</span>';
+            }
+
+            function offlineNotice(text) {
+                return '<div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm text-sm text-slate-500">' + escapeHtml(text) +
+                    '<span class="mt-1 block text-xs text-orange-600">Offline — showing this device\'s saved roster only.</span></div>';
+            }
+
+            function dlItem(label, value) {
+                return '<div><dt class="text-slate-400">' + escapeHtml(label) + '</dt><dd class="text-slate-900">' + escapeHtml(value || '—') + '</dd></div>';
+            }
+
+            function renderOfflineSearch(mode, value) {
+                serverResultBox.hidden = true;
+                offlineResultBox.hidden = false;
+
+                if (mode === 'name') {
+                    if (value.length < 2) {
+                        offlineResultBox.innerHTML = offlineNotice('Type at least 2 characters to search by name.');
+                        return;
+                    }
+                    offline.search({ name: value }).then(function (matches) { renderNameResults(value, matches); });
+                    return;
+                }
+
+                offline.search({ its: value }).then(function (matches) { renderItsResult(value, matches); });
+            }
+
+            function renderNameResults(query, matches) {
+                if (matches.length === 0) {
+                    offlineResultBox.innerHTML = offlineNotice('No cached matches for "' + query + '" in this session\'s roster. Reconnect to search the full directory.');
+                    return;
+                }
+
+                var rows = matches.map(function (a) {
+                    return '<button type="button" class="offline-result-row flex w-full items-center justify-between rounded-xl border border-slate-100 p-3 text-left" data-its="' + escapeHtml(a.its_id) + '">' +
+                        '<div><p class="text-sm font-medium text-slate-900">' + escapeHtml(a.full_name) + '</p>' +
+                        '<p class="text-xs text-slate-400">ITS: ' + escapeHtml(a.its_id) + ' &middot; ' + escapeHtml(a.department_name) + '</p></div>' +
+                        statusBadge(a.current_status) + '</button>';
+                }).join('');
+
+                offlineResultBox.innerHTML = '<div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">' +
+                    '<p class="mb-1 text-sm font-semibold text-slate-700">Matches for "' + escapeHtml(query) + '"</p>' +
+                    '<p class="mb-3 text-xs text-orange-600">Offline — showing this device\'s saved roster only.</p>' +
+                    '<div class="space-y-2">' + rows + '</div></div>';
+
+                offlineResultBox.querySelectorAll('.offline-result-row').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        offline.search({ its: btn.dataset.its }).then(function (m) { renderItsResult(btn.dataset.its, m); });
+                    });
+                });
+            }
+
+            function renderItsResult(its, matches) {
+                if (matches.length === 0) {
+                    offlineResultBox.innerHTML = offlineNotice('ITS ' + escapeHtml(its) + ' is not on this session\'s cached list. Reconnect to search the full directory or record Extra Present.');
+                    return;
+                }
+
+                if (matches.length === 1) {
+                    offlineResultBox.innerHTML = renderSingleCard(matches[0]);
+                    wireSingleCard(matches[0]);
+                    return;
+                }
+
+                offlineResultBox.innerHTML = renderMultiList(its, matches);
+                wireMultiList(matches);
+            }
+
+            function renderSingleCard(a) {
+                var html = '<div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm" id="offline-card">' +
+                    '<div class="flex items-center justify-between">' +
+                    '<div><p class="font-semibold text-slate-900">' + escapeHtml(a.full_name) + '</p>' +
+                    '<p class="text-xs text-slate-400">ITS: ' + escapeHtml(a.its_id) + '</p></div>' +
+                    statusBadge(a.current_status) + '</div>' +
+                    '<dl class="mt-4 grid grid-cols-2 gap-3 text-sm">' +
+                    dlItem('Department', a.department_name) + dlItem('Block', a.block_name) +
+                    dlItem('Seat', a.seat) + dlItem('Day', a.day_alias || a.day) +
+                    '</dl>';
+
+                if (a.current_status === 'pending') {
+                    html += '<div class="mt-4 rounded-xl bg-orange-50 p-3 text-xs text-orange-700">This person is in this session\'s duty list and not yet marked.</div>';
+                    if (canMarkAttendance) {
+                        html += '<div class="mt-4">' +
+                            '<button type="button" class="text-xs font-semibold text-blue-600" data-remark-toggle>+ Add Remark</button>' +
+                            '<div hidden data-remark-box class="mt-2"><textarea data-remark-input rows="2" maxlength="500" class="block w-full rounded-xl border-slate-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Optional remark"></textarea></div>' +
+                            '<div class="mt-3 grid grid-cols-2 gap-3">' +
+                            '<button type="button" data-action="present" class="kg-tap inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700">' + escapeHtml(labelMarkPresent) + '</button>' +
+                            '<button type="button" data-action="cancel" class="kg-tap inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>' +
+                            '</div></div>' +
+                            '<button type="button" data-action="absent" class="mt-2 w-full rounded-xl border border-red-200 py-2 text-xs font-semibold text-red-600">' + escapeHtml(labelMarkAbsent) + '</button>';
+                    }
+                } else if (a.current_status === 'present') {
+                    html += '<div class="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700"><p class="font-semibold">Already Present</p><p class="text-xs">Saved on this device, syncs when online.</p></div>';
+                } else {
+                    html += '<div class="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700"><p class="font-semibold">Already marked Absent</p><p class="text-xs">Saved on this device, syncs when online.</p></div>';
+                    if (canCorrectAttendance) {
+                        html += '<div class="mt-3"><p class="mb-2 text-xs text-slate-500">' + escapeHtml(labelCorrectHint) + '</p>' +
+                            '<button type="button" data-action="present" class="kg-tap inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700">' + escapeHtml(labelCorrectToPresent) + '</button></div>';
+                    }
+                }
+
+                return html + '</div>';
+            }
+
+            function wireSingleCard(a) {
+                var card = document.getElementById('offline-card');
+                if (!card) return;
+
+                var toggle = card.querySelector('[data-remark-toggle]');
+                if (toggle) {
+                    toggle.addEventListener('click', function () {
+                        var box = card.querySelector('[data-remark-box]');
+                        box.hidden = !box.hidden;
+                    });
+                }
+
+                var cancelBtn = card.querySelector('[data-action="cancel"]');
+                if (cancelBtn) {
+                    cancelBtn.addEventListener('click', function () { offlineResultBox.innerHTML = ''; offlineResultBox.hidden = true; });
+                }
+
+                ['present', 'absent'].forEach(function (action) {
+                    var btn = card.querySelector('[data-action="' + action + '"]');
+                    if (!btn) return;
+                    btn.addEventListener('click', function () {
+                        if (action === 'absent' && !confirm('Mark this person Absent?')) return;
+                        var remarkInput = card.querySelector('[data-remark-input]');
+                        var remark = remarkInput ? remarkInput.value : null;
+                        offline.markAttendance(a.assignment_id, action, remark).then(function () {
+                            card.querySelectorAll('button, textarea').forEach(function (el) { el.disabled = true; });
+                            var note = document.createElement('p');
+                            note.className = 'mt-2 text-xs font-semibold text-orange-600';
+                            note.textContent = '{{ __('Saved offline — will sync automatically when connection returns.') }}';
+                            card.appendChild(note);
+                            refreshUi();
+                        });
+                    });
+                });
+            }
+
+            function renderMultiList(its, matches) {
+                var rows = matches.map(function (a) {
+                    var correctable = (a.current_status === 'pending' && canMarkAttendance) || (a.current_status === 'absent' && canCorrectAttendance);
+                    return '<label class="flex items-center justify-between rounded-xl border border-slate-100 p-3 ' + (correctable ? '' : 'opacity-60') + '">' +
+                        '<span class="flex items-center gap-3">' +
+                        '<input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500" data-assignment="' + a.assignment_id + '" ' + (correctable ? '' : 'disabled') + '>' +
+                        '<span><span class="block text-sm font-medium text-slate-900">' + escapeHtml(a.department_name) + '</span>' +
+                        '<span class="block text-xs text-slate-400">' + escapeHtml(a.block_name) + ' &middot; Seat ' + escapeHtml(a.seat) + '</span></span></span>' +
+                        statusBadge(a.current_status) + '</label>';
+                }).join('');
+
+                var submitBtn = labelMarkSelectedPresent
+                    ? '<button type="button" id="offline-multi-submit" class="kg-tap mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-emerald-300" disabled>' + escapeHtml(labelMarkSelectedPresent) + '</button>'
+                    : '';
+
+                return '<div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm" id="offline-multi">' +
+                    '<p class="mb-1 text-sm font-semibold text-slate-700">Multiple Assignments Found</p>' +
+                    '<p class="mb-4 text-xs text-slate-400">ITS ' + escapeHtml(its) + ' has ' + matches.length + ' separate duty assignments in this session (cached). Select which one(s) to mark.</p>' +
+                    '<div class="space-y-2">' + rows + '</div>' + submitBtn + '</div>';
+            }
+
+            function wireMultiList(matches) {
+                var box = document.getElementById('offline-multi');
+                if (!box) return;
+                var checkboxes = box.querySelectorAll('input[type="checkbox"]');
+                var submitBtn = document.getElementById('offline-multi-submit');
+                if (!submitBtn) return;
+
+                function refreshBtn() {
+                    submitBtn.disabled = Array.prototype.filter.call(checkboxes, function (c) { return c.checked; }).length === 0;
+                }
+                checkboxes.forEach(function (c) { c.addEventListener('change', refreshBtn); });
+
+                submitBtn.addEventListener('click', function () {
+                    var selected = Array.prototype.filter.call(checkboxes, function (c) { return c.checked; }).map(function (c) { return parseInt(c.dataset.assignment, 10); });
+                    if (!selected.length || !confirm('Mark the selected assignment(s) Present?')) return;
+
+                    Promise.all(selected.map(function (id) { return offline.markAttendance(id, 'present', null); })).then(function () {
+                        submitBtn.disabled = true;
+                        checkboxes.forEach(function (c) { c.disabled = true; });
+                        var note = document.createElement('p');
+                        note.className = 'mt-2 text-xs font-semibold text-orange-600';
+                        note.textContent = '{{ __('Saved offline — will sync automatically when connection returns.') }}';
+                        box.appendChild(note);
+                        refreshUi();
+                    });
+                });
+            }
+
+            document.querySelectorAll('.js-search-form').forEach(function (form) {
+                form.addEventListener('submit', function (e) {
+                    e.preventDefault();
+
+                    var mode = form.dataset.searchMode;
+                    var input = form.querySelector(mode === 'its' ? '[name="its"]' : '[name="name"]');
+                    var value = input ? input.value.trim() : '';
+                    if (!value) return;
+
+                    var url = form.action + '?' + mode + '=' + encodeURIComponent(value);
+
+                    var ctrl = new AbortController();
+                    var timeout = setTimeout(function () { ctrl.abort(); }, 4000);
+
+                    fetch(url, { method: 'GET', credentials: 'same-origin', signal: ctrl.signal, headers: { Accept: 'text/html' } })
+                        .then(function (res) {
+                            clearTimeout(timeout);
+                            if (res.ok) {
+                                window.location.href = url;
+                            } else {
+                                return Promise.reject(new Error('http_' + res.status));
+                            }
+                        })
+                        .catch(function () {
+                            clearTimeout(timeout);
+                            renderOfflineSearch(mode, value);
+                        });
+                });
+            });
+        });
         </script>
     @endif
 </x-app-layout>
